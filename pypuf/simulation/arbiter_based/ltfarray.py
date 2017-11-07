@@ -677,9 +677,23 @@ class LTFArray(Simulation):
         :return: array of int shape(N,k)
                  Array of responses for the N different challenges.
         """
+        assert self.n == inputs.shape[2], 'challenges should be length %i, but were %i' % (
+            self.n,
+            inputs.shape[2],
+        )
         if self.bias is not None:
+            assert self.weight_array.shape == (self.k, self.n + 1), 'weight array should have shape %s, but had %s' % (
+                (self.k, self.n + 1),
+                self.weight_array.shape,
+            )
             responses = ph.eval(tools.append_last(inputs, 1), self.weight_array)
+            #inputs_and_bias = tools.append_last(inputs, 1)
+            #responses = transpose(array([dot(inputs_and_bias[:,l], self.weight_array[l]) for l in range(self.k)]))
         else:
+            assert self.weight_array.shape == (self.k, self.n), 'weight array should have shape %s, but had %s' % (
+                (self.k, self.n),
+                self.weight_array.shape,
+            )
             responses = ph.eval(inputs, self.weight_array)
         return responses
 
