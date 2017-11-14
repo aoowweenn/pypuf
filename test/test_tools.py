@@ -11,19 +11,6 @@ from pypuf.tools import random_input, all_inputs, random_inputs, sample_inputs, 
 class TestAppendLast(unittest.TestCase):
     """This class is used to test the append_last method from tools."""
 
-    def test_same_dtype(self):
-        """This function checks for type safety"""
-        typ = dtype('int64')
-        arr = zeros((3, 2, 1), dtype=typ)
-        item = 30
-        arr_res = append_last(arr, item)
-        self.assertEqual(arr_res.dtype, typ, 'The types must be equal.')
-
-        arr = zeros((3, 2, 1), dtype=typ)
-        item = 30.1
-        with self.assertRaisesRegex(AssertionError, 'The elements of arr and item must be of the same type.'):
-            append_last(arr, item)
-
     def test_proper_dimension(self):
         """The function recognizes that the array has dimension zero."""
         arr = zeros((), dtype=dtype('int64'))
