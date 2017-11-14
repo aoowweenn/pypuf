@@ -5,7 +5,7 @@ from numpy.random import RandomState
 from numpy.testing import assert_array_equal
 from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 from pypuf.tools import random_input, all_inputs, random_inputs, sample_inputs, chi_vectorized, append_last, \
-    TrainingSet, RESULT_TYPE, transform_challenge_11_to_01, transform_challenge_01_to_11
+    TrainingSet, RESULT_TYPE, transform_challenge_11_to_01, transform_challenge_01_to_11, poly_mult_div
 
 
 class TestAppendLast(unittest.TestCase):
@@ -160,9 +160,12 @@ class TestInputFunctions(unittest.TestCase):
     def test_poly_mult_div(self):
         """This method checks the shape and type of two dimensional arrays."""
         n = 8
+        k = 2
         N = 2 ** int(n / 2)
         challenges_11 = random_inputs(n, N)
         challenges_01 = array([transform_challenge_11_to_01(c) for c in challenges_11], dtype=RESULT_TYPE)
+        irreducible_polynomial = array([1, 0, 1, 0, 0, 1, 1, 0, 1], dtype=RESULT_TYPE)
+        poly_mult_div(challenges_01, irreducible_polynomial, k)
         self.check_multi_dimensional_array(challenges_01, N, n, RESULT_TYPE)
 
     def check_multi_dimensional_array(self, arr, arr_size, sub_arr_size, arr_type):

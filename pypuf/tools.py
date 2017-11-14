@@ -225,6 +225,7 @@ def poly_mult_div(challenge, irreducible_polynomial, k):
             res = array([challenge], dtype=RESULT_TYPE)
         else:
             res = vstack((res, challenge))
+    res = res.astype(RESULT_TYPE)
     assert res.dtype == dtype(RESULT_TYPE), 'result must be an array of {0}.'.format(RESULT_TYPE)
     return res
 
