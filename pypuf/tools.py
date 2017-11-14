@@ -124,9 +124,8 @@ def approx_fourier_coefficient(s, training_set):
     :return: float
              The approximated value of the coefficient
     """
-    assert s.dtype == dtype(RESULT_TYPE), 's must be an {0} array.'.format(RESULT_TYPE)
-    assert training_set.challenges.dtype == dtype(RESULT_TYPE), 'training_set.challenges must be an {0} array.'.format(
-        RESULT_TYPE)
+    assert_result_type(s)
+    assert_result_type(training_set.challenges)
     return mean(training_set.responses * chi_vectorized(s, training_set.challenges))
 
 
@@ -140,8 +139,8 @@ def chi_vectorized(s, inputs):
     :return: array of int8 shape(N)
              chi_s(x) = prod_(i in s) x_i for all x in inputs (`latex formula`)
     """
-    assert s.dtype == dtype(RESULT_TYPE), 's must be an {0} array.'.format(RESULT_TYPE)
-    assert inputs.dtype == dtype(RESULT_TYPE), 'inputs must be an {0} array'.format(RESULT_TYPE)
+    assert_result_type(s)
+    assert_result_type(inputs)
     assert len(s) == len(inputs[0])
     result = inputs[:, s > 0]
     if result.size == 0:
@@ -174,7 +173,7 @@ def transform_challenge_01_to_11(challenge):
     :return: array of int8
              Same vector in -1,1 notation
     """
-    assert challenge.dtype == dtype(RESULT_TYPE), 'challenge must be of type {0}'.format(RESULT_TYPE)
+    assert_result_type(challenge)
     res = copy(challenge)
     res[res == 1] = -1
     res[res == 0] = 1
@@ -191,7 +190,7 @@ def transform_challenge_11_to_01(challenge):
     :return: array of int8
              Same vector in 0,1 notation
     """
-    assert challenge.dtype == dtype(RESULT_TYPE), 'challenge must be of type {0}'.format(RESULT_TYPE)
+    assert_result_type(challenge)
     res = copy(challenge)
     res[res == 1] = 0
     res[res == -1] = 1
@@ -213,9 +212,8 @@ def poly_mult_div(challenge, irreducible_polynomial, k):
              Array of polynomials
     """
     import polymath as pm
-    assert challenge.dtype == dtype(RESULT_TYPE), 'challenge must be an array of {0}.'.format(RESULT_TYPE)
-    assert irreducible_polynomial.dtype == dtype(RESULT_TYPE), 'irreducible_polynomial must be an array of {0}.'.format(
-        RESULT_TYPE)
+    assert_result_type(challenge)
+    assert_result_type(irreducible_polynomial)
     c_original = challenge
     res = None
     for i in range(k):
@@ -226,7 +224,7 @@ def poly_mult_div(challenge, irreducible_polynomial, k):
         else:
             res = vstack((res, challenge))
     res = res.astype(RESULT_TYPE)
-    assert res.dtype == dtype(RESULT_TYPE), 'result must be an array of {0}.'.format(RESULT_TYPE)
+    assert_result_type(res)
     return res
 
 
@@ -251,6 +249,14 @@ def approx_stabilities(instance, num, reps, random_instance=RandomState()):
     for i in range(reps):
         responses[i, :] = instance.eval(challenges)
     return 0.5 + 0.5 * np_abs(np_sum(responses, axis=0)) / reps
+
+
+def assert_result_type(arr):
+    """
+    This function checks the type of the array to match the RESULT_TYPE
+    :param arr: array of arbitrary type
+    """
+    assert arr.dtype == dtype(RESULT_TYPE), 'Must be an array of {0}. Got array of {1}'.format(RESULT_TYPE, arr.dtype)
 
 
 class TrainingSet():
