@@ -25,13 +25,14 @@ class TestExperimentLogisticRegression(TestBase):
     """
     This class tests the logistic regression experiment.
     """
+
     @logging
     def test_run_and_analyze(self, logger):
         """
         This method only runs the experiment.
         """
         lr16_4 = ExperimentLogisticRegression(
-            LOG_PATH+'exp1', 8, 2, 2 ** 8, 0xbeef, 0xbeef, LTFArray.transform_id,
+            LOG_PATH + 'exp1', 8, 2, 2 ** 8, 0xbeef, 0xbeef, LTFArray.transform_id,
             LTFArray.combiner_xor,
         )
         lr16_4.execute(logger.queue, logger.logger_name)
@@ -70,10 +71,12 @@ class TestExperimentLogisticRegression(TestBase):
             exp_1_result_log.close()
             exp_2_result_log.close()
             # Check the results to be not empty
-            self.assertFalse(result_1 == '', 'The experiment log was empty.')
-            self.assertFalse(result_2 == '', 'The experiment log was empty.')
+            self.assertFalse(result_1 == '', 'The experiment {0} log was empty.'.format(experiment_1.log_name))
+            self.assertFalse(result_2 == '', 'The experiment log {0} was empty.'.format(experiment_2.log_name))
             # Compare logs
-            self.assertTrue(result_1 == result_2, 'The results must be equal.')
+            self.assertTrue(result_1 == result_2,
+                            'The results of {0} and {1} must be equal.'.format(experiment_1.log_name,
+                                                                               experiment_2.log_name))
 
         def get_exp(name, k, trans, comb):
             """Experiment creation shortcut
@@ -92,6 +95,7 @@ class TestExperimentLogisticRegression(TestBase):
                 seed_challenge=seed_challenge,
                 seed_chl_distance=seed_distance,
             )
+
         # Result check
         for transformation in transformations:
             for combiner in combiners:
@@ -146,6 +150,7 @@ class TestExperimentMajorityVoteFindVotes(TestBase):
     This class is used to test the Experiment which searches for a number of votes which is needed to achieve an
     overall desired stability.
     """
+
     @logging
     def test_run_and_analyze(self, logger):
         """
