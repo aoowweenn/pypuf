@@ -84,7 +84,6 @@ def append_last(arr, item):
     :return: n dimensional array of type
              initial arr with appended element item
     """
-    assert arr.dtype == dtype(type(item)), 'The elements of arr and item must be of the same type.'
     dimension = list(shape(arr))
     assert len(dimension) >= 1, 'arr must have at least one dimension.'
     # the lowest level should contain one item
