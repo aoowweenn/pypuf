@@ -213,13 +213,18 @@ def poly_mult_div(challenge, irreducible_polynomial, k):
     import polymath as pm
     assert_result_type(challenge)
     assert_result_type(irreducible_polynomial)
+    # challenge = challenge.astype('uint8')
+    # irreducible_polynomial = irreducible_polynomial.astype('uint8')
+    # TODO Change the type to int8 or uint8
+    challenge = challenge.astype('int64')
+    irreducible_polynomial = irreducible_polynomial.astype('int64')
     c_original = challenge
     res = None
     for i in range(k):
         challenge = pm.polymul(challenge, c_original)
         challenge = pm.polymodpad(challenge, irreducible_polynomial)
         if i == 0:
-            res = array([challenge], dtype=RESULT_TYPE)
+            res = array([challenge], dtype='int8')
         else:
             res = vstack((res, challenge))
     res = res.astype(RESULT_TYPE)
