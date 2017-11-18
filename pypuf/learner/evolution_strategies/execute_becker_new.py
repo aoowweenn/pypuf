@@ -1,7 +1,7 @@
 import numpy as np
 import itertools as it
 from pypuf import tools
-from pypuf.learner.evolution_strategies.simple_cma import Simple_CMA_ES as Becker
+from pypuf.learner.evolution_strategies.becker import Reliability_based_CMA_ES as Becker
 from pypuf.simulation.arbiter_based.ltfarray import LTFArray, NoisyLTFArray
 import time
 
@@ -27,12 +27,12 @@ def get_particular_accuracies(instance, model, k, challenges):
 path = 'execs_new.csv'
 
 # set parameters
-pop_sizes = np.array([8, 24])
-challenge_nums = np.array([2**14])
+pop_sizes = np.array([24])
+challenge_nums = np.array([2**13])
 repetitions = np.array([2**3])
 noisinesses = np.array([1/2**3])
 ks = np.array([1])
-ns = np.array([64])
+ns = np.array([32])
 limits_s = np.array([1/2**12])
 limits_i = np.array([2**12])
 prngs = np.array([0x1234, 0xABC, 0x777])
@@ -90,7 +90,7 @@ for pop_size in pop_sizes:
                                     # learn instance and evaluate solution
                                     model = becker.learn()
                                     responses_model = model.eval(challenges)
-                                    responses_instance = becker.get_common_responses(responses_repeated)
+                                    responses_instance = becker.common_responses(responses_repeated)
                                     assert len(responses_model) == len(responses_instance)
                                     accuracy = 1 - tools.approx_dist(instance, model, 2 ** 14)
                                     accuracy_training = 1 - (challenge_num - np.count_nonzero(

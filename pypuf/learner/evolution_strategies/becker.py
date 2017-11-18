@@ -70,10 +70,10 @@ class Reliability_based_CMA_ES():
                     self.different_LTFs[self.num_of_LTFs] = new_LTF * normalize / norm(new_LTF)  # normalize weights
                     self.num_of_LTFs += 1
         # polarize the learned combined LTF
-        common_responses = self.get_common_responses(self.responses_repeated)
+        common_responses = self.common_responses(self.responses_repeated)
         self.different_LTFs = self.set_pole_of_LTFs(self.different_LTFs, self.challenges, common_responses,
                                                     self.transform, self.combiner)
-        return LTFArray(self.different_LTFs, self.transform, self.combiner, bias=False)
+        return LTFArray(self.different_LTFs, self.transform, self.combiner, bias=None)
 
     @staticmethod
     def get_fitness_function(challenges, measured_rels, epsilon, transform, combiner):
@@ -143,7 +143,7 @@ class Reliability_based_CMA_ES():
         # returns iterator over ltf_arrays created out of every individual
         pop_size = np.shape(weight_arrays)[0]
         for i in range(pop_size):
-            yield LTFArray(weight_arrays[i, np.newaxis, :], transform, combiner, bias=False)
+            yield LTFArray(weight_arrays[i, np.newaxis, :], transform, combiner, bias=None)
 
     @staticmethod
     def get_delay_differences(built_LTFArrays, pop_size, challenges):
@@ -188,7 +188,7 @@ class Reliability_based_CMA_ES():
         return False
 
     @staticmethod
-    def get_common_responses(responses):
+    def common_responses(responses):
         # returns the common responses out of repeated responses
         return np.sign(np.sum(responses, axis=0))
 

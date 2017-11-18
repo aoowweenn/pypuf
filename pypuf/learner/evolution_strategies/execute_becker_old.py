@@ -90,7 +90,7 @@ for pop_size in pop_sizes:
                                     # learn instance and evaluate solution
                                     model = becker.learn()
                                     responses_model = model.eval(challenges)
-                                    responses_instance = becker.get_common_responses(responses_repeated)
+                                    responses_instance = becker.common_responses(responses_repeated)
                                     assert len(responses_model) == len(responses_instance)
                                     accuracy = 1 - tools.approx_dist(instance, model, 2 ** 14)
                                     accuracy_training = 1 - (challenge_num - np.count_nonzero(
