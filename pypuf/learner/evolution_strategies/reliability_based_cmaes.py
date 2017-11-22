@@ -14,7 +14,8 @@ from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 
 class ReliabilityBasedCMAES(Learner):
 
-    def __init__(self, training_set, k, n, pop_size, step_size_limit, iteration_limit, seed_model):
+    def __init__(self, training_set, k, n,
+                 pop_size, step_size_limit, iteration_limit, seed_model):
         """Initialize a Reliability based CMAES Learner for the specified LTF array
 
         :param training_set:    Training set, a data structure containing repeated challenge response pairs
@@ -91,8 +92,8 @@ class ReliabilityBasedCMAES(Learner):
 
         def fitness(individual):
             """Return individuals sorted by their correlation coefficient as fitness"""
-            built_ltf_array = LTFArray(individual[np.newaxis, :], transform, combiner)
-            delay_diffs = built_ltf_array.val(challenges)
+            ltf_array = LTFArray(individual[np.newaxis, :], transform, combiner)
+            delay_diffs = ltf_array.val(challenges)
             reliabilities = np.zeros(np.shape(delay_diffs))
             indices_of_reliable = np.abs(delay_diffs[:]) > epsilon
             reliabilities[indices_of_reliable] = 1

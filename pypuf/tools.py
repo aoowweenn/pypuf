@@ -260,7 +260,7 @@ class TrainingSet():
     Note that this is, strictly speaking, not a set.
     """
 
-    def __init__(self, instance, N, reps=None):
+    def __init__(self, instance, N, random_instance=RandomState(), reps=None):
         """
         :param instance: pypuf.simulation.base.Simulation
                          Instance which is used to generate responses for random challenges.
@@ -268,14 +268,14 @@ class TrainingSet():
                   Number of desired challenges
         """
         self.instance = instance
-        self.challenges = array(list(sample_inputs(instance.n, N)))
+        self.challenges = array(list(sample_inputs(instance.n, N, random_instance=random_instance)))
         if reps is None:
             reps = 1
         self.responses = zeros((reps, N))
         for i in range(reps):
             self.challenges, cs = itertools.tee(self.challenges)
             self.responses[i, :] = instance.eval(array(list(cs)))
-        self.responses = instance.eval(self.challenges)
+        self.challenges = array(list(self.challenges))
         if reps == 1:
             self.responses = squeeze(self.responses, axis=0)
         self.N = N
