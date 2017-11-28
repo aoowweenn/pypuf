@@ -55,8 +55,8 @@ def main(args):
     if len(args) == 13:
         log_name = args[12]
 
-    stderr.write('Learning %s-bit %s XOR Arbiter PUF with %f noisiness'
-                 'using %s different %s times repeated CRPs and %s restarts,'
+    stderr.write('Learning %s-bit %s XOR Arbiter PUF with %f noisiness '
+                 'using %s different %s times repeated CRPs and %s restarts, '
                  'where %s solution points are sampled each iteration of the CMAES algorithm.\n\n'
                  % (n, k, num, noisiness, reps, restarts, pop_size))
     stderr.write('The following seeds are used for generating pseudo random numbers.\n')
@@ -66,8 +66,8 @@ def main(args):
     stderr.write('\n')
 
     # Fix limits for CMAES (this should be changed later!)
-    limit_s = 1 / 2**12
-    limit_i = 2**12
+    limit_s = 2**10
+    limit_i = 2**8
 
     # Create different experiment instances
     experiments = []
@@ -91,7 +91,7 @@ def main(args):
             experiments.append(experiment)
 
     experimenter = Experimenter(log_name, experiments)
-    # run the instances
+    # Run the instances
     experimenter.run()
 
 

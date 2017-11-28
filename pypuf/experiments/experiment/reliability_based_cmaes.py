@@ -90,11 +90,9 @@ class ExperimentReliabilityBasedCMAES(Experiment):
     def analyze(self):
         """Analyze the learned model"""
         assert self.model is not None
-        self.result_logger = logging.getLogger('result_logger')
-        self.result_logger.setLevel(logging.INFO)
         self.result_logger.info(
-            # seed_i    seed_m      n       k       N       reps    noisiness   time    accuracy    model values
-            '0x%x\t'    '0x%x\t'    '%i\t'  '%i\t'  '%i\t'  '%i\t'  '%f\t'      '%f\t'  '%f\t'      '%s',
+            # seed_i    seed_m      n       k       N       reps    noisiness   time    abortions   accuracy    model
+            '0x%x\t'    '0x%x\t'    '%i\t'  '%i\t'  '%i\t'  '%i\t'  '%f\t'      '%f\t'  '%i\t'      '%f\t'      '%s',
             self.seed_instance,
             self.seed_model,
             self.n,
@@ -103,6 +101,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.reps,
             self.noisiness,
             self.measured_time,
-            1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n)),
+            self.model.abortions,
+            1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_challenges),
             ','.join(map(str, self.model.weight_array.flatten() / norm(self.model.weight_array.flatten())))
         )

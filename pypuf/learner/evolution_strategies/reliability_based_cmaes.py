@@ -34,12 +34,13 @@ class ReliabilityBasedCMAES(Learner):
         self.challenges = training_set.challenges
         self.responses_rep = training_set.responses
         self.reps = training_set.reps
-        self.different_LTFs = np.zeros((self.k, self.n))
-        self.num_of_LTFs = 0
+        self.learned_ltfs = np.zeros((self.k, self.n))
+        self.num_learned = 0
         self.pop_size = pop_size
         self.limit_s = step_size_limit
         self.limit_i = iteration_limit
-        self.seed_model = seed_model
+        self.abortions = 0
+        self.prng_model = np.random.RandomState(seed_model)
 
     @property
     def training_set(self):
@@ -67,23 +68,43 @@ class ReliabilityBasedCMAES(Learner):
         measured_rels = self.measure_rels(self.responses_rep)
         fitness = self.create_fitness_function(self.challenges, measured_rels, epsilon, self.transform, self.combiner)
         normalize = np.sqrt(2) * gamma(self.n / 2) / gamma((self.n - 1) / 2)
+        mean_start = np.zeros(self.n)
+        step_size_start = 1
+        options = {
+            'seed': 0,
+            'pop': self.pop_size,
+            'maxiter': self.limit_i,
+            'tolstagnation': self.limit_s,
+        }
 
-        # Learn new particular LTF
-        options = {'seed': self.seed_model, 'pop': self.pop_size}
-        res = cma.fmin(fitness, np.zeros(self.n), 1, options)
-        solution = res[0]
+        # Learn all particular PUF chains
+        while self.num_learned < self.k:
+            options['seed'] = self.prng_model.randint(2 ** 32)
+            same_solution = self.create_abortion_function(
+                self.learned_ltfs, self.num_learned, self.challenges, self.transform, self.combiner
+            )
+            es = cma.CMAEvolutionStrategy(x0=mean_start, sigma0=step_size_start, inopts=options)
+            counter = 0
+            while not es.stop():
+                if counter % 50 == 0 and same_solution is not None:
+                    if same_solution(es.mean):
+                        self.abortions += 1
+                        break
+                curr_points = es.ask()
+                es.tell(curr_points, [fitness(point) for point in curr_points])
+                counter += 1
+            solution = es.best.x
 
-        # Include normalized new LTF, if it is different from previous ones
-        if self.is_different_ltf(solution, self.different_LTFs, self.num_of_LTFs, self.challenges,
-                                 self.transform, self.combiner):
-            self.different_LTFs[self.num_of_LTFs] = solution * normalize / norm(solution)  # normalize weights
-            self.num_of_LTFs += 1
+            # Include normalized new LTF, if it is different from previous ones
+            if not same_solution(solution):
+                self.learned_ltfs[self.num_learned] = normalize * solution / norm(solution)
+                self.num_learned += 1
 
         # Polarize the learned combined LTF
         common_responses = self.common_responses(self.responses_rep)
-        self.different_LTFs = self.polarize_ltfs(self.different_LTFs, self.challenges, common_responses,
-                                                 self.transform, self.combiner)
-        return LTFArray(self.different_LTFs, self.transform, self.combiner)
+        self.learned_ltfs = self.polarize_ltfs(self.learned_ltfs, self.challenges, common_responses,
+                                               self.transform, self.combiner)
+        return LTFArray(self.learned_ltfs, self.transform, self.combiner)
 
     @staticmethod
     def create_fitness_function(challenges, measured_rels, epsilon, transform, combiner):
@@ -112,49 +133,33 @@ class ReliabilityBasedCMAES(Learner):
             return np.corrcoef(reliabilities[:], measured_rels)[0, 1]
 
     @staticmethod
-    def create_abortion_function(different_ltfs, num_of_ltfs, challenges, transform, combiner):
-        """Return an abortion function on a fixed set of challenges and LTFs
-        ###Currently not used###
-        """
+    def create_abortion_function(learned_ltfs, num_learned, challenges, transform, combiner):
+        """Return an abortion function on a fixed set of challenges and LTFs"""
         this = __class__
-        weight_arrays = different_ltfs[:num_of_ltfs, :]
-        different_ltf_arrays = this.build_ltf_arrays(weight_arrays, transform, combiner)
-        responses_diff_ltfs = np.zeros((num_of_ltfs, np.shape(challenges)[0]))
-        for i, current_ltf in enumerate(different_ltf_arrays):
-            responses_diff_ltfs[i, :] = current_ltf.eval(challenges)
+        weight_arrays = learned_ltfs[:num_learned, :]
+        learned_ltf_arrays = this.build_ltf_arrays(weight_arrays, transform, combiner)
+        responses_learned_ltfs = np.zeros((num_learned, np.shape(challenges)[0]))
+        for i, current_ltf in enumerate(learned_ltf_arrays):
+            responses_learned_ltfs[i, :] = current_ltf.eval(challenges)
 
-        def abortion(new_ltf):
+        def same_solution(solution):
             """Return True, if the current solution mean within CMAES is similar to a previously learned LTF array"""
-            if num_of_ltfs == 0:
+            if num_learned == 0:
                 return False
-            new_ltf_array = LTFArray(new_ltf[np.newaxis, :], transform, combiner)
+            new_ltf_array = LTFArray(solution[np.newaxis, :], transform, combiner)
             responses_new_ltf = new_ltf_array.eval(challenges)
-            return this.is_correlated(responses_new_ltf, responses_diff_ltfs)
+            return this.is_correlated(responses_new_ltf, responses_learned_ltfs)
 
-        return abortion
-
-    @staticmethod
-    def is_different_ltf(new_ltf, different_ltfs, num_of_ltfs, challenges, transform, combiner):
-        """Return True, if new LTF is different from previously learned LTFs"""
-        if num_of_ltfs == 0:
-            return True
-        weight_arrays = different_ltfs[:num_of_ltfs, :]
-        new_ltf_array = LTFArray(new_ltf[np.newaxis, :], transform, combiner)
-        different_ltf_arrays = __class__.build_ltf_arrays(weight_arrays, transform, combiner)
-        responses_new_ltf = new_ltf_array.eval(challenges)
-        responses_diff_ltfs = np.zeros((num_of_ltfs, np.shape(challenges)[0]))
-        for i, current_ltf in enumerate(different_ltf_arrays):
-            responses_diff_ltfs[i, :] = current_ltf.eval(challenges)
-        return not __class__.is_correlated(responses_new_ltf, responses_diff_ltfs)
+        return same_solution
 
     @staticmethod
-    def polarize_ltfs(different_ltfs, challenges, common_responses, transform, combiner):
+    def polarize_ltfs(learned_ltfs, challenges, common_responses, transform, combiner):
         """Return the correctly polarized XOR LTF array"""
-        model = LTFArray(different_ltfs, transform, combiner)
+        model = LTFArray(learned_ltfs, transform, combiner)
         responses_model = model.eval(challenges)
         challenge_num = np.shape(challenges)[0]
         accuracy = np.count_nonzero(responses_model == common_responses) / challenge_num
-        polarized_ltfs = different_ltfs
+        polarized_ltfs = learned_ltfs
         if accuracy < 0.5:
             polarized_ltfs[0, :] *= -1
         return polarized_ltfs
@@ -167,11 +172,11 @@ class ReliabilityBasedCMAES(Learner):
             yield LTFArray(weight_arrays[i, np.newaxis, :], transform, combiner)
 
     @staticmethod
-    def is_correlated(responses_new_ltf, responses_diff_ltfs):
+    def is_correlated(responses_new_ltf, responses_learned_ltfs):
         """Return True, if 2 response arrays are more than 75% equal (Hamming distance)"""
-        num_of_ltfs, challenge_num = np.shape(responses_diff_ltfs)
+        num_of_ltfs, challenge_num = np.shape(responses_learned_ltfs)
         for i in range(num_of_ltfs):
-            differences = np.sum(np.abs(responses_new_ltf[:] - responses_diff_ltfs[i, :])) / 2
+            differences = np.sum(np.abs(responses_new_ltf[:] - responses_learned_ltfs[i, :])) / 2
             if differences < 0.25*challenge_num or differences > 0.75*challenge_num:
                 return True
         return False
