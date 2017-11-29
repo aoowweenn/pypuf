@@ -3,6 +3,8 @@ Arbiter PUF. It is based on the work from G. T. Becker in "The Gap Between Promi
 of XOR Arbiter PUFs". The learning algorithm applies Covariance Matrix Adaptation Evolution Strategies from
 N. Hansen in "The CMA Evolution Strategy: A Comparing Review".
 """
+import sys
+import contextlib
 import numpy as np
 from scipy.special import gamma
 from scipy.linalg import norm
@@ -34,13 +36,15 @@ class ReliabilityBasedCMAES(Learner):
         self.challenges = training_set.challenges
         self.responses_rep = training_set.responses
         self.reps = training_set.reps
-        self.learned_ltfs = np.zeros((self.k, self.n))
-        self.num_learned = 0
         self.pop_size = pop_size
         self.limit_s = step_size_limit
         self.limit_i = iteration_limit
-        self.abortions = 0
         self.prng_model = np.random.RandomState(seed_model)
+        self.learned_ltfs = np.zeros((self.k, self.n))
+        self.iterations = 0
+        self.stops = []
+        self.abortions = 0
+        self.num_learned = 0
 
     @property
     def training_set(self):
@@ -77,34 +81,47 @@ class ReliabilityBasedCMAES(Learner):
             'tolstagnation': self.limit_s,
         }
 
-        # Learn all particular PUF chains
-        while self.num_learned < self.k:
-            options['seed'] = self.prng_model.randint(2 ** 32)
-            same_solution = self.create_abortion_function(
-                self.learned_ltfs, self.num_learned, self.challenges, self.transform, self.combiner
-            )
-            es = cma.CMAEvolutionStrategy(x0=mean_start, sigma0=step_size_start, inopts=options)
-            counter = 0
-            while not es.stop():
-                if counter % 50 == 0 and same_solution is not None:
-                    if same_solution(es.mean):
-                        self.abortions += 1
-                        break
-                curr_points = es.ask()
-                es.tell(curr_points, [fitness(point) for point in curr_points])
-                counter += 1
-            solution = es.best.x
+        # Learn all particular LTF arrays
+        with self.avoid_printing():
+            while self.num_learned < self.k:
+                options['seed'] = self.prng_model.randint(2 ** 32)
+                same_solution = self.create_abortion_function(
+                    self.learned_ltfs, self.num_learned, self.challenges, self.transform, self.combiner
+                )
+                es = cma.CMAEvolutionStrategy(x0=mean_start, sigma0=step_size_start, inopts=options)
+                counter = 0
+                # Learn particular LTF array using abortion if evolutionary search approximates previous solution
+                while not es.stop():
+                    if counter % 50 == 0 and same_solution is not None:
+                        if same_solution(es.mean):
+                            self.abortions += 1
+                            self.iterations += counter
+                            break
+                    curr_points = es.ask()
+                    es.tell(curr_points, [fitness(point) for point in curr_points])
+                    counter += 1
+                solution = es.result.xbest
+                self.iterations += es.result.iterations
 
-            # Include normalized new LTF, if it is different from previous ones
-            if not same_solution(solution):
-                self.learned_ltfs[self.num_learned] = normalize * solution / norm(solution)
-                self.num_learned += 1
+                # Include normalized new LTF, if it is different from previous ones
+                if not same_solution(solution):
+                    self.learned_ltfs[self.num_learned] = normalize * solution / norm(solution)
+                    self.num_learned += 1
+                self.stops += list(es.stop())
 
         # Polarize the learned combined LTF
         common_responses = self.common_responses(self.responses_rep)
         self.learned_ltfs = self.polarize_ltfs(self.learned_ltfs, self.challenges, common_responses,
                                                self.transform, self.combiner)
         return LTFArray(self.learned_ltfs, self.transform, self.combiner)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def avoid_printing():
+        save_stdout = sys.stdout
+        sys.stdout = open('trash', 'w')
+        yield
+        sys.stdout = save_stdout
 
     @staticmethod
     def create_fitness_function(challenges, measured_rels, epsilon, transform, combiner):

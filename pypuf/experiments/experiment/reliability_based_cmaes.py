@@ -1,9 +1,7 @@
 """This module provides an experiment class which learns an instance
 of LTFArray with reliability based CMAES learner.
 """
-from numpy.random import RandomState
-from numpy.linalg import norm
-import logging
+import numpy as np
 
 from pypuf.experiments.experiment.base import Experiment
 from pypuf.learner.evolution_strategies.reliability_based_cmaes import ReliabilityBasedCMAES
@@ -43,20 +41,21 @@ class ExperimentReliabilityBasedCMAES(Experiment):
                 pop_size,
             ),
         )
-        # PUF instance to learn
+        # Instance of LTF array to learn
         self.seed_instance = seed_i
-        self.prng_instance = RandomState(seed=self.seed_instance)
+        self.prng_instance = np.random.RandomState(seed=self.seed_instance)
         self.k = k
         self.n = n
         self.noisiness = noisiness
         # Training set
         self.seed_challenges = seed_c
-        self.prng_challenges = RandomState(seed=self.seed_instance)
+        self.prng_challenges = np.random.RandomState(seed=self.seed_instance)
         self.num = num
         self.reps = reps
+        self.training_set = None
         # Parameters for CMAES
         self.seed_model = seed_m
-        self.prng_model = RandomState(seed=self.seed_model)
+        self.prng_model = np.random.RandomState(seed=self.seed_model)
         self.pop_size = pop_size
         self.limit_s = step_size_limit
         self.limit_i = iteration_limit
@@ -76,8 +75,9 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             sigma_noise=NoisyLTFArray.sigma_noise_from_random_weights(self.n, 1, self.noisiness),
             random_instance=self.prng_instance,
         )
+        self.training_set = tools.TrainingSet(self.instance, self.num, self.prng_challenges, self.reps)
         self.learner = ReliabilityBasedCMAES(
-            tools.TrainingSet(self.instance, self.num, self.prng_challenges, self.reps),
+            self.training_set,
             self.k,
             self.n,
             self.pop_size,
@@ -91,8 +91,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         """Analyze the learned model"""
         assert self.model is not None
         self.result_logger.info(
-            # seed_i    seed_m      n       k       N       reps    noisiness   time    abortions   accuracy    model
-            '0x%x\t'    '0x%x\t'    '%i\t'  '%i\t'  '%i\t'  '%i\t'  '%f\t'      '%f\t'  '%i\t'      '%f\t'      '%s',
+            '0x%x\t0x%x\t%i\t%i\t%i\t%i\t%f\t%f\t%s\t%f\t%s\t%i\t%i\t%s',
             self.seed_instance,
             self.seed_model,
             self.n,
@@ -100,8 +99,27 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.num,
             self.reps,
             self.noisiness,
-            self.measured_time,
-            self.model.abortions,
             1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_challenges),
-            ','.join(map(str, self.model.weight_array.flatten() / norm(self.model.weight_array.flatten())))
+            self.calc_particular_accs(),
+            self.measured_time,
+            self.learner.stops,
+            self.learner.abortions,
+            self.learner.iterations,
+            ','.join(map(str, self.model.weight_array.flatten() / np.linalg.norm(self.model.weight_array.flatten()))),
         )
+
+    def calc_particular_accs(self):
+        num = np.shape(self.training_set.challenges)[0]
+        transform = self.model.transform
+        combiner = self.model.combiner
+        accuracies = np.zeros(self.k)
+        for i in range(self.k):
+            single_LTFArray_model = LTFArray(self.model.weight_array[i, np.newaxis, :], transform, combiner)
+            responses_model = single_LTFArray_model.eval(self.training_set.challenges)
+            for j in range(self.k):
+                single_LTFArray_original = LTFArray(self.instance.weight_array[j, np.newaxis, :], transform, combiner)
+                responses_original = single_LTFArray_original.eval(self.training_set.challenges)
+                accuracy = 0.5 + np.abs(0.5 - (np.count_nonzero(responses_model == responses_original) / num))
+                if accuracy > accuracies[i]:
+                    accuracies[i] = accuracy
+        return accuracies
