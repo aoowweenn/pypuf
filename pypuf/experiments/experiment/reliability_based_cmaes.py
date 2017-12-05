@@ -12,20 +12,20 @@ from pypuf import tools
 class ExperimentReliabilityBasedCMAES(Experiment):
 
     def __init__(self, log_name,
-                 seed_i, k, n, noisiness,
-                 seed_c, num, reps,
-                 seed_m, pop_size, step_size_limit, iteration_limit,
+                 seed_instance, k, n, noisiness,
+                 seed_challenges, num, reps,
+                 seed_model, pop_size, step_size_limit, iteration_limit,
                  ):
         """Initialize an Experiment using the Reliability based CMAES Learner for modeling LTF Arrays
         :param log_name:        Log name, Prefix of the path or name of the experiment log file
-        :param seed_i:          PRNG seed used to create LTF array instances
+        :param seed_instance:   PRNG seed used to create LTF array instances
         :param k:               Width, the number of parallel LTFs in the LTF array
         :param n:               Length, the number stages within the LTF array
         :param noisiness:       Noisiness, the relative scale of noise of instance compared to the scale of weights
-        :param seed_c:          PRNG seed used to sample challenges
+        :param seed_challenges: PRNG seed used to sample challenges
         :param num:             Challenge number, the number of binary inputs for the LTF array
         :param reps:            Repetitions, the frequency of evaluations of every challenge (part of training_set)
-        :param seed_m:          PRNG seed used by the CMAES algorithm for sampling solution points
+        :param seed_model:      PRNG seed used by the CMAES algorithm for sampling solution points
         :param pop_size:        Population size, the number of sampled points of every CMAES iteration
         :param step_size_limit: Step size limit, the minimal size of step size within the CMAES
         :param iteration_limit: Iteration limit, the maximal number of iterations within the CMAES
@@ -33,7 +33,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         super().__init__(
             log_name='%s.0x%x_%i_%i_%i_%i_%i' % (
                 log_name,
-                seed_i,
+                seed_instance,
                 k,
                 n,
                 num,
@@ -42,20 +42,19 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             ),
         )
         # Instance of LTF array to learn
-        self.seed_instance = seed_i
-        self.prng_instance = np.random.RandomState(seed=self.seed_instance)
+        self.seed_instance = seed_instance
+        self.prng_i = np.random.RandomState(seed=self.seed_instance)
         self.k = k
         self.n = n
         self.noisiness = noisiness
         # Training set
-        self.seed_challenges = seed_c
-        self.prng_challenges = np.random.RandomState(seed=self.seed_instance)
+        self.seed_challenges = seed_challenges
+        self.prng_c = np.random.RandomState(seed=self.seed_instance)
         self.num = num
         self.reps = reps
         self.training_set = None
         # Parameters for CMAES
-        self.seed_model = seed_m
-        self.prng_model = np.random.RandomState(seed=self.seed_model)
+        self.seed_model = seed_model
         self.pop_size = pop_size
         self.limit_s = step_size_limit
         self.limit_i = iteration_limit
@@ -65,17 +64,17 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         self.model = None
 
     def run(self):
-        """Initialize the instance, the training set and the learner to then run the Reliability based CMAES
-        with the given parameters
+        """Initialize the instance, the training set and the learner
+        to then run the Reliability based CMAES with the given parameters
         """
         self.instance = NoisyLTFArray(
-            weight_array=LTFArray.normal_weights(self.n, self.k, random_instance=self.prng_instance),
+            weight_array=LTFArray.normal_weights(self.n, self.k, random_instance=self.prng_i),
             transform=LTFArray.transform_id,
             combiner=LTFArray.combiner_xor,
             sigma_noise=NoisyLTFArray.sigma_noise_from_random_weights(self.n, 1, self.noisiness),
-            random_instance=self.prng_instance,
+            random_instance=self.prng_i,
         )
-        self.training_set = tools.TrainingSet(self.instance, self.num, self.prng_challenges, self.reps)
+        self.training_set = tools.TrainingSet(self.instance, self.num, self.prng_c, self.reps)
         self.learner = ReliabilityBasedCMAES(
             self.training_set,
             self.k,
@@ -84,6 +83,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.limit_s,
             self.limit_i,
             self.seed_model,
+            self.progress_logger,
         )
         self.model = self.learner.learn()
 
@@ -99,27 +99,25 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.num,
             self.reps,
             self.noisiness,
-            1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_challenges),
+            1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_c),
             self.calc_particular_accs(),
             self.measured_time,
             self.learner.stops,
-            self.learner.abortions,
-            self.learner.iterations,
+            self.learner.num_abortions,
+            self.learner.num_iterations,
             ','.join(map(str, self.model.weight_array.flatten() / np.linalg.norm(self.model.weight_array.flatten()))),
         )
 
     def calc_particular_accs(self):
-        num = np.shape(self.training_set.challenges)[0]
+        """Calculate the accuracies of particular chains of the learned model"""
         transform = self.model.transform
         combiner = self.model.combiner
         accuracies = np.zeros(self.k)
         for i in range(self.k):
-            single_LTFArray_model = LTFArray(self.model.weight_array[i, np.newaxis, :], transform, combiner)
-            responses_model = single_LTFArray_model.eval(self.training_set.challenges)
+            chain_model = LTFArray(self.model.weight_array[i, np.newaxis, :], transform, combiner)
             for j in range(self.k):
-                single_LTFArray_original = LTFArray(self.instance.weight_array[j, np.newaxis, :], transform, combiner)
-                responses_original = single_LTFArray_original.eval(self.training_set.challenges)
-                accuracy = 0.5 + np.abs(0.5 - (np.count_nonzero(responses_model == responses_original) / num))
-                if accuracy > accuracies[i]:
-                    accuracies[i] = accuracy
-        return accuracies
+                chain_original = LTFArray(self.instance.weight_array[j, np.newaxis, :], transform, combiner)
+                accuracy = tools.approx_dist(chain_original, chain_model, min(10000, 2 ** self.n), self.prng_c)
+                accuracy = 1.0 - accuracy if accuracy < 0.5 else accuracy
+                accuracies[i] = accuracy if accuracy > accuracies[i] else accuracies[i]
+        return ','.join(map(str, accuracies))

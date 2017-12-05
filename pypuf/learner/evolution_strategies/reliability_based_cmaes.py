@@ -16,8 +16,7 @@ from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 
 class ReliabilityBasedCMAES(Learner):
 
-    def __init__(self, training_set, k, n,
-                 pop_size, step_size_limit, iteration_limit, seed_model):
+    def __init__(self, training_set, k, n, pop_size, step_size_limit, iteration_limit, random_seed, logger):
         """Initialize a Reliability based CMAES Learner for the specified LTF array
 
         :param training_set:    Training set, a data structure containing repeated challenge response pairs
@@ -26,7 +25,8 @@ class ReliabilityBasedCMAES(Learner):
         :param pop_size:        Population size, the number of sampled points of every CMAES iteration
         :param step_size_limit: Step size limit, the minimal size of step size within the CMAES
         :param iteration_limit: Iteration limit, the maximal number of iterations within the CMAES
-        :param seed_model:      PRNG seed used by the CMAES algorithm for sampling solution points
+        :param random_seed:     PRNG seed used by the CMAES algorithm for sampling solution points
+        :param logger:          Logger, the instance that logs detailed information every learning iteration
         """
         self.__training_set = training_set
         self.k = k
@@ -39,12 +39,13 @@ class ReliabilityBasedCMAES(Learner):
         self.pop_size = pop_size
         self.limit_s = step_size_limit
         self.limit_i = iteration_limit
-        self.prng_model = np.random.RandomState(seed_model)
-        self.learned_ltfs = np.zeros((self.k, self.n))
-        self.iterations = 0
-        self.stops = []
-        self.abortions = 0
+        self.prng = np.random.RandomState(random_seed)
+        self.learned_chains = np.zeros((self.k, self.n))
+        self.num_iterations = 0
+        self.stops = ''
+        self.num_abortions = 0
         self.num_learned = 0
+        self.logger = logger
 
     @property
     def training_set(self):
@@ -67,6 +68,18 @@ class ReliabilityBasedCMAES(Learner):
                  The computed model.
         """
 
+        def log_state(es):
+            """Log a snapshot of learning variables while running"""
+            if self.logger is None:
+                return
+            self.logger.debug(
+                '%i\t%f\t%f\t%s\n',
+                self.num_iterations,
+                es.sigma,
+                fitness(es.mean),
+                ','.join(map(str, list(es.mean))),
+            )
+
         # Preparation
         epsilon = np.sqrt(self.n) * 0.1
         measured_rels = self.measure_rels(self.responses_rep)
@@ -84,42 +97,45 @@ class ReliabilityBasedCMAES(Learner):
         # Learn all particular LTF arrays
         with self.avoid_printing():
             while self.num_learned < self.k:
-                options['seed'] = self.prng_model.randint(2 ** 32)
-                same_solution = self.create_abortion_function(
-                    self.learned_ltfs, self.num_learned, self.challenges, self.transform, self.combiner
+                options['seed'] = self.prng.randint(2 ** 32)
+                is_same_solution = self.create_abortion_function(
+                    self.learned_chains, self.num_learned, self.challenges, self.transform, self.combiner
                 )
                 es = cma.CMAEvolutionStrategy(x0=mean_start, sigma0=step_size_start, inopts=options)
                 counter = 0
                 # Learn particular LTF array using abortion if evolutionary search approximates previous solution
                 while not es.stop():
-                    if counter % 50 == 0 and same_solution is not None:
-                        if same_solution(es.mean):
-                            self.abortions += 1
-                            self.iterations += counter
+                    if counter % 50 == 0 and is_same_solution is not None:
+                        if is_same_solution(es.mean):
+                            self.num_abortions += 1
                             break
                     curr_points = es.ask()
                     es.tell(curr_points, [fitness(point) for point in curr_points])
+                    self.num_iterations += 1
+                    log_state(es)
                     counter += 1
                 solution = es.result.xbest
-                self.iterations += es.result.iterations
+                self.num_iterations += es.result.iterations
 
                 # Include normalized new LTF, if it is different from previous ones
-                if not same_solution(solution):
-                    self.learned_ltfs[self.num_learned] = normalize * solution / norm(solution)
+                if not is_same_solution(solution):
+                    self.learned_chains[self.num_learned] = normalize * solution / norm(solution)
                     self.num_learned += 1
-                self.stops += list(es.stop())
+                if self.stops != '':
+                    self.stops += ','
+                self.stops += '_'.join(list(es.stop()))
 
         # Polarize the learned combined LTF
         common_responses = self.common_responses(self.responses_rep)
-        self.learned_ltfs = self.polarize_ltfs(self.learned_ltfs, self.challenges, common_responses,
-                                               self.transform, self.combiner)
-        return LTFArray(self.learned_ltfs, self.transform, self.combiner)
+        self.learned_chains = self.polarize_ltfs(self.learned_chains, self.challenges, common_responses,
+                                                 self.transform, self.combiner)
+        return LTFArray(self.learned_chains, self.transform, self.combiner)
 
     @staticmethod
     @contextlib.contextmanager
     def avoid_printing():
         save_stdout = sys.stdout
-        sys.stdout = open('trash', 'w')
+        sys.stdout = open('/dev/null', 'w')
         yield
         sys.stdout = save_stdout
 

@@ -65,9 +65,9 @@ def main(args):
                  'or the total number of iterations equals %i.\n\n'
                  % (restarts, instances, n, k, noisiness, num, reps, pop_size, limit_s, limit_i))
     stderr.write('The following seeds are used for generating pseudo random numbers.\n')
-    stderr.write('  seed for instance: 0x%x\n' % seed_i)
-    stderr.write('  seed for challenges: 0x%x\n' % seed_c)
-    stderr.write('  seed for model:    0x%x\n' % seed_m)
+    stderr.write('  seed for instance:      0x%x\n' % seed_i)
+    stderr.write('  seed for challenges:    0x%x\n' % seed_c)
+    stderr.write('  seed for model:         0x%x\n' % seed_m)
     stderr.write('\n')
 
     # Create different experiment instances
@@ -77,14 +77,14 @@ def main(args):
             l_name = '%s_%i_%i' % (log_name, instance, attempt)
             experiment = ExperimentReliabilityBasedCMAES(
                 log_name=l_name,
-                seed_i=seed_i + instance,
+                seed_instance=seed_i + instance,
                 k=k,
                 n=n,
                 noisiness=noisiness,
-                seed_c=seed_c + instance,
+                seed_challenges=seed_c + instance,
                 num=num,
                 reps=reps,
-                seed_m=seed_m + attempt,
+                seed_model=seed_m + attempt,
                 pop_size=pop_size,
                 step_size_limit=limit_s,
                 iteration_limit=limit_i,
