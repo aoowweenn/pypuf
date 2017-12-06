@@ -15,8 +15,8 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
     reps = 4
     mu_weight = 0
     sigma_weight = 1
-    transform = NoisyLTFArray.transform_id
-    combiner = NoisyLTFArray.combiner_xor
+    transform = LTFArray.transform_id
+    combiner = LTFArray.combiner_xor
     seed_instance = 1234
     prng_i = np.random.RandomState(seed_instance)
     seed_model = 1234
@@ -24,7 +24,7 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
     seed_challenges = 1234
     prng_c = np.random.RandomState(seed_challenges)
 
-    weight_array = NoisyLTFArray.normal_weights(n, k, mu_weight, sigma_weight)
+    weight_array = LTFArray.normal_weights(n, k, mu_weight, sigma_weight, prng_i)
 
     @unittest.skip
     def test_learn(self):
@@ -41,7 +41,6 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
         distance = tools.approx_dist(instance, model, 100000)
         assert distance < 0.4
 
-    @unittest.skip
     def test_calc_corr(self):
         rels_1 = np.array([0, 1, 2, 1])
         rels_2 = np.array([0, 0, 0, 1])
@@ -50,9 +49,9 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
         corr_1_2 = ReliabilityBasedCMAES.calc_corr(rels_1, rels_2)
         corr_1_3 = ReliabilityBasedCMAES.calc_corr(rels_1, rels_3)
         corr_2_3 = ReliabilityBasedCMAES.calc_corr(rels_2, rels_3)
-        corr_1_4 = ReliabilityBasedCMAES.calc_corr(rels_1, rels_4)
+        corr_4_1 = ReliabilityBasedCMAES.calc_corr(rels_4, rels_1)
         assert corr_1_2 < corr_1_3 < corr_2_3
-        self.assertEqual(corr_1_4, -1)
+        self.assertEqual(corr_4_1, -1)
 
     @unittest.skip
     def test_polarize_ltfs(self):

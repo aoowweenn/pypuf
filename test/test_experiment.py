@@ -190,6 +190,7 @@ class TestExperimentReliabilityBasedCMAES(TestBase):
     """
     This class tests the reliability based CMAES experiment.
     """
+    @unittest.skip
     def test_run_and_analyze(self):
         """
         This method only runs the experiment.
@@ -223,6 +224,7 @@ class TestExperimentReliabilityBasedCMAES(TestBase):
         queue.put_nowait(None)
         listener.join()
 
+    @unittest.skip
     def test_calc_individual_accs(self):
         """This method tests"""
         mock = object
