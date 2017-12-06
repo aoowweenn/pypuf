@@ -3,10 +3,14 @@ import unittest
 import os
 import glob
 import multiprocessing
+from numpy import shape
+from numpy.random import RandomState
+
 from pypuf.simulation.arbiter_based.ltfarray import LTFArray, NoisyLTFArray
 from pypuf.experiments.experimenter import log_listener, setup_logger
 from pypuf.experiments.experiment.logistic_regression import ExperimentLogisticRegression
 from pypuf.experiments.experiment.majority_vote import ExperimentMajorityVoteFindVotes
+from pypuf.experiments.experiment.reliability_based_cmaes import ExperimentReliabilityBasedCMAES
 
 
 class TestBase(unittest.TestCase):
@@ -180,3 +184,59 @@ class TestExperimentMajorityVoteFindVotes(unittest.TestCase):
 
         queue.put_nowait(None)
         listener.join()
+
+
+class TestExperimentReliabilityBasedCMAES(TestBase):
+    """
+    This class tests the reliability based CMAES experiment.
+    """
+    def test_run_and_analyze(self):
+        """
+        This method only runs the experiment.
+        """
+        logger_name = 'log'
+
+        # Setup multiprocessing logging
+        queue = multiprocessing.Queue(-1)
+        listener = multiprocessing.Process(target=log_listener,
+                                           args=(queue, setup_logger, logger_name,))
+        listener.start()
+
+        experiment = ExperimentReliabilityBasedCMAES(
+            log_name=logger_name,
+            seed_instance=0xbee,
+            k=2,
+            n=16,
+            transform=LTFArray.transform_id,
+            combiner=LTFArray.combiner_xor,
+            noisiness=0.1,
+            seed_challenges=0xbee,
+            num=2**12,
+            reps=4,
+            seed_model=0xbee,
+            pop_size=16,
+            limit_stag=100,
+            limit_iter=1000,
+        )
+        experiment.execute(queue, logger_name)
+
+        queue.put_nowait(None)
+        listener.join()
+
+    def test_calc_individual_accs(self):
+        """This method tests"""
+        mock = object
+        mock.transform = LTFArray.transform_id
+        mock.combiner = LTFArray.combiner_xor
+        mock.n = 16
+        mock.k = 2
+        mock.model = object
+        mock.model.weight_array = LTFArray.normal_weights(mock.n, mock.k, random_instance=RandomState(0xbee))
+        mock.instance = object
+        mock.instance.weight_array = LTFArray.normal_weights(mock.n, mock.k, random_instance=RandomState(0xbabe))
+        mock.prng_c = RandomState(0xabc)
+        particular_accs = ExperimentReliabilityBasedCMAES.calc_individual_accs(mock)
+        self.assertIsNotNone(particular_accs)
+        assert shape(particular_accs) == (mock.k,)
+        for i in range(mock.k):
+            assert particular_accs[i] > 0.5 and particular_accs[i] <= 1.0

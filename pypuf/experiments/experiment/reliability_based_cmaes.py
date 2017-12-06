@@ -12,23 +12,25 @@ from pypuf import tools
 class ExperimentReliabilityBasedCMAES(Experiment):
 
     def __init__(self, log_name,
-                 seed_instance, k, n, noisiness,
+                 seed_instance, k, n, transform, combiner, noisiness,
                  seed_challenges, num, reps,
-                 seed_model, pop_size, step_size_limit, iteration_limit,
+                 seed_model, pop_size, limit_stag, limit_iter,
                  ):
         """Initialize an Experiment using the Reliability based CMAES Learner for modeling LTF Arrays
         :param log_name:        Log name, Prefix of the path or name of the experiment log file
-        :param seed_instance:   PRNG seed used to create LTF array instances
+        :param seed_instance:   PRNG seed used to create an LTF array instance to learn
         :param k:               Width, the number of parallel LTFs in the LTF array
         :param n:               Length, the number stages within the LTF array
+        :param transform:       Transformation function, the function that modifies the input within the LTF array
+        :param combiner:        Combiner, the function that combines particular chains' outputs within the LTF array
         :param noisiness:       Noisiness, the relative scale of noise of instance compared to the scale of weights
         :param seed_challenges: PRNG seed used to sample challenges
         :param num:             Challenge number, the number of binary inputs for the LTF array
-        :param reps:            Repetitions, the frequency of evaluations of every challenge (part of training_set)
+        :param reps:            Repetitions, the number of evaluations of every challenge (part of training_set)
         :param seed_model:      PRNG seed used by the CMAES algorithm for sampling solution points
         :param pop_size:        Population size, the number of sampled points of every CMAES iteration
-        :param step_size_limit: Step size limit, the minimal size of step size within the CMAES
-        :param iteration_limit: Iteration limit, the maximal number of iterations within the CMAES
+        :param limit_stag:      Stagnation limit, the maximal number of stagnating iterations within the CMAES
+        :param limit_iter:      Iteration limit, the maximal number of iterations within the CMAES
         """
         super().__init__(
             log_name='%s.0x%x_%i_%i_%i_%i_%i' % (
@@ -46,6 +48,8 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         self.prng_i = np.random.RandomState(seed=self.seed_instance)
         self.k = k
         self.n = n
+        self.transform = transform
+        self.combiner = combiner
         self.noisiness = noisiness
         # Training set
         self.seed_challenges = seed_challenges
@@ -56,8 +60,8 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         # Parameters for CMAES
         self.seed_model = seed_model
         self.pop_size = pop_size
-        self.limit_s = step_size_limit
-        self.limit_i = iteration_limit
+        self.limit_s = limit_stag
+        self.limit_i = limit_iter
         # Basic objects
         self.instance = None
         self.learner = None
@@ -69,8 +73,8 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         """
         self.instance = NoisyLTFArray(
             weight_array=LTFArray.normal_weights(self.n, self.k, random_instance=self.prng_i),
-            transform=LTFArray.transform_id,
-            combiner=LTFArray.combiner_xor,
+            transform=self.transform,
+            combiner=self.combiner,
             sigma_noise=NoisyLTFArray.sigma_noise_from_random_weights(self.n, 1, self.noisiness),
             random_instance=self.prng_i,
         )
@@ -79,6 +83,8 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.training_set,
             self.k,
             self.n,
+            self.transform,
+            self.combiner,
             self.pop_size,
             self.limit_s,
             self.limit_i,
@@ -100,7 +106,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             self.reps,
             self.noisiness,
             1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_c),
-            self.calc_particular_accs(),
+            self.calc_individual_accs(),
             self.measured_time,
             self.learner.stops,
             self.learner.num_abortions,
@@ -108,7 +114,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
             ','.join(map(str, self.model.weight_array.flatten() / np.linalg.norm(self.model.weight_array.flatten()))),
         )
 
-    def calc_particular_accs(self):
+    def calc_individual_accs(self):
         """Calculate the accuracies of particular chains of the learned model"""
         transform = self.model.transform
         combiner = self.model.combiner

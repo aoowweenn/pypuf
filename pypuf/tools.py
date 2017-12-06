@@ -262,10 +262,14 @@ class TrainingSet():
 
     def __init__(self, instance, N, random_instance=RandomState(), reps=None):
         """
-        :param instance: pypuf.simulation.base.Simulation
-                         Instance which is used to generate responses for random challenges.
-        :param N: int
-                  Number of desired challenges
+        :param instance:        pypuf.simulation.base.Simulation
+                                Instance which is used to generate responses for random challenges
+        :param N:               int
+                                Number of desired challenges
+        :param random_instance: numpy.random.RandomState
+                                PRNG instance for pseudo random sampling challenges
+        :param reps:            int
+                                Number of repeated evaluations of every challenge on instance (None equals 1)
         """
         self.instance = instance
         self.challenges = array(list(sample_inputs(instance.n, N, random_instance=random_instance)))

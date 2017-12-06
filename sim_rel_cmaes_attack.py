@@ -4,6 +4,8 @@ PUF LTFarray simulation with the reliability based CMAES learning algorithm. If 
 to define nine parameters which define the experiment.
 """
 from sys import argv, stderr
+
+from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 from pypuf.experiments.experiment.reliability_based_cmaes import ExperimentReliabilityBasedCMAES
 from pypuf.experiments.experimenter import Experimenter
 
@@ -54,15 +56,15 @@ def main(args):
         seed_c = int(args[12], 16)
         seed_m = int(args[13], 16)
 
-    log_name = 'sim_rel_cmaes'
+    log_name = 'test_sim_rel_cmaes'
     if len(args) == 15:
         log_name = args[14]
 
-    stderr.write('Learning %i times each %i (%i,%i)-XOR Arbiter PUF(s) with %f noisiness, '
+    stderr.write('Learning %i time(s) each %i (%i,%i)-XOR Arbiter PUF(s) with %f noisiness, '
                  'using %i different %i times repeated CRPs.\n'
                  'There, %i solution points are sampled each iteration of the CMAES algorithm. '
                  'Among other termination criteria, it stops if the fitness stagnates since %i iterations '
-                 'or the total number of iterations equals %i.\n\n'
+                 'or the total number of iterations equals %i.\n'
                  % (restarts, instances, n, k, noisiness, num, reps, pop_size, limit_s, limit_i))
     stderr.write('The following seeds are used for generating pseudo random numbers.\n')
     stderr.write('  seed for instance:      0x%x\n' % seed_i)
@@ -80,14 +82,16 @@ def main(args):
                 seed_instance=seed_i + instance,
                 k=k,
                 n=n,
+                transform=LTFArray.transform_atf,
+                combiner=LTFArray.combiner_xor,
                 noisiness=noisiness,
                 seed_challenges=seed_c + instance,
                 num=num,
                 reps=reps,
                 seed_model=seed_m + attempt,
                 pop_size=pop_size,
-                step_size_limit=limit_s,
-                iteration_limit=limit_i,
+                limit_stag=limit_s,
+                limit_iter=limit_i,
             )
             experiments.append(experiment)
 

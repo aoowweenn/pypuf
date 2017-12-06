@@ -1,5 +1,5 @@
 """This module provides a learner exploiting different reliabilities of challenges evaluated several times on an
-Arbiter PUF. It is based on the work from G. T. Becker in "The Gap Between Promise and Reality: On the Insecurity
+XOR Arbiter PUF. It is based on the work from G. T. Becker in "The Gap Between Promise and Reality: On the Insecurity
 of XOR Arbiter PUFs". The learning algorithm applies Covariance Matrix Adaptation Evolution Strategies from
 N. Hansen in "The CMA Evolution Strategy: A Comparing Review".
 """
@@ -16,29 +16,32 @@ from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 
 class ReliabilityBasedCMAES(Learner):
 
-    def __init__(self, training_set, k, n, pop_size, step_size_limit, iteration_limit, random_seed, logger):
+    def __init__(self, training_set, k, n, transform, combiner,
+                 pop_size, limit_stag, limit_iter, random_seed, logger):
         """Initialize a Reliability based CMAES Learner for the specified LTF array
 
         :param training_set:    Training set, a data structure containing repeated challenge response pairs
         :param k:               Width, the number of parallel LTFs in the LTF array
         :param n:               Length, the number stages within the LTF array
+        :param transform:       Transformation function, the function that modifies the input within the LTF array
+        :param combiner:        Combiner, the function that combines particular chains' outputs within the LTF array
         :param pop_size:        Population size, the number of sampled points of every CMAES iteration
-        :param step_size_limit: Step size limit, the minimal size of step size within the CMAES
-        :param iteration_limit: Iteration limit, the maximal number of iterations within the CMAES
+        :param limit_stag:      Stagnation limit, the maximal number of stagnating iterations within the CMAES
+        :param limit_iter:      Iteration limit, the maximal number of iterations within the CMAES
         :param random_seed:     PRNG seed used by the CMAES algorithm for sampling solution points
         :param logger:          Logger, the instance that logs detailed information every learning iteration
         """
-        self.__training_set = training_set
+        self.training_set = training_set
         self.k = k
         self.n = n
-        self.transform = LTFArray.transform_id
-        self.combiner = LTFArray.combiner_xor
+        self.transform = transform
+        self.combiner = combiner
         self.challenges = training_set.challenges
         self.responses_rep = training_set.responses
         self.reps = training_set.reps
         self.pop_size = pop_size
-        self.limit_s = step_size_limit
-        self.limit_i = iteration_limit
+        self.limit_s = limit_stag
+        self.limit_i = limit_iter
         self.prng = np.random.RandomState(random_seed)
         self.learned_chains = np.zeros((self.k, self.n))
         self.num_iterations = 0
@@ -46,20 +49,6 @@ class ReliabilityBasedCMAES(Learner):
         self.num_abortions = 0
         self.num_learned = 0
         self.logger = logger
-
-    @property
-    def training_set(self):
-        """Return the training set which is used to learn a PUF instance
-        :return: pypuf.tools.TrainingSet
-        """
-        return self.__training_set
-
-    @training_set.setter
-    def training_set(self, val):
-        """Set the training set which is used to learn a PUF instance
-        :param val: pypuf.tools.TrainingSet
-        """
-        self.__training_set = val
 
     def learn(self):
         """Compute a model according to the given LTF Array parameters and training set
@@ -94,7 +83,7 @@ class ReliabilityBasedCMAES(Learner):
             'tolstagnation': self.limit_s,
         }
 
-        # Learn all particular LTF arrays
+        # Learn all individual LTF arrays (chains)
         with self.avoid_printing():
             while self.num_learned < self.k:
                 options['seed'] = self.prng.randint(2 ** 32)
@@ -121,15 +110,29 @@ class ReliabilityBasedCMAES(Learner):
                 if not is_same_solution(solution):
                     self.learned_chains[self.num_learned] = normalize * solution / norm(solution)
                     self.num_learned += 1
-                if self.stops != '':
-                    self.stops += ','
-                self.stops += '_'.join(list(es.stop()))
+                    if self.stops != '':
+                        self.stops += ','
+                    self.stops += '_'.join(list(es.stop()))
 
         # Polarize the learned combined LTF
-        common_responses = self.common_responses(self.responses_rep)
-        self.learned_chains = self.polarize_ltfs(self.learned_chains, self.challenges, common_responses,
+        majority_responses = self.majority_responses(self.responses_rep)
+        self.learned_chains = self.polarize_ltfs(self.learned_chains, self.challenges, majority_responses,
                                                  self.transform, self.combiner)
         return LTFArray(self.learned_chains, self.transform, self.combiner)
+
+    @property
+    def training_set(self):
+        """Return the training set which is used to learn a PUF instance
+        :return: pypuf.tools.TrainingSet
+        """
+        return self.__training_set
+
+    @training_set.setter
+    def training_set(self, val):
+        """Set the training set which is used to learn a PUF instance
+        :param val: pypuf.tools.TrainingSet
+        """
+        self.__training_set = val
 
     @staticmethod
     @contextlib.contextmanager
@@ -186,12 +189,12 @@ class ReliabilityBasedCMAES(Learner):
         return same_solution
 
     @staticmethod
-    def polarize_ltfs(learned_ltfs, challenges, common_responses, transform, combiner):
-        """Return the correctly polarized XOR LTF array"""
+    def polarize_ltfs(learned_ltfs, challenges, majority_responses, transform, combiner):
+        """Return the correctly polarized combined LTF array"""
         model = LTFArray(learned_ltfs, transform, combiner)
         responses_model = model.eval(challenges)
         challenge_num = np.shape(challenges)[0]
-        accuracy = np.count_nonzero(responses_model == common_responses) / challenge_num
+        accuracy = np.count_nonzero(responses_model == majority_responses) / challenge_num
         polarized_ltfs = learned_ltfs
         if accuracy < 0.5:
             polarized_ltfs[0, :] *= -1
@@ -215,7 +218,7 @@ class ReliabilityBasedCMAES(Learner):
         return False
 
     @staticmethod
-    def common_responses(responses):
+    def majority_responses(responses):
         """Return the common responses out of repeated responses"""
         return np.sign(np.sum(responses, axis=0))
 
