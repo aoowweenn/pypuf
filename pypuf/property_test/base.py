@@ -2,7 +2,10 @@
 This module provides a class for several property tests which can be used to check the attributes of an PUF.
 """
 import sys
-from numpy import array, mean, absolute
+from numpy import array, mean, median, absolute, sqrt
+from numpy import min as np_min
+from numpy import max as np_max
+from numpy import sum as np_sum
 from scipy.spatial.distance import hamming
 
 
@@ -39,7 +42,7 @@ class PropertyTest(object):
         :param instance: pypuf.simulation.base.Simulation
         :param challenges: array of int shape(N,n)
         :param evaluation_count: int
-        :return: double
+        :return: float
         """
         responses = instance.eval(challenges)
         for _ in range(evaluation_count - 1):
@@ -47,6 +50,41 @@ class PropertyTest(object):
         # average distance over all distances
         mean_distance = mean(1 - absolute(responses / evaluation_count))
         return mean_distance
+
+    @staticmethod
+    def intra_distance_leuven(instance, challenges, measurements=10):
+        """
+        This function calculates the intra distance of a puf instance like in:
+        Physically Unclonable Functions: Constructions, Properties and Applications page 20
+        https://lirias.kuleuven.be/bitstream/123456789/353455/1/thesis_online.pdf
+        This function uses the fractional Hamming distance.
+        :param instance: pypuf.simulation.base.Simulation
+        :param challenges: array of int shape(N,n)
+        :param meas_index: int
+                           Index which is used to select a response which is used to calculate the intra distance.
+                           0 <= meas_index measurements
+        :param measurements: int
+                             Number of evaluations of the puf instance.
+        :return: list of float
+                 List of all possible distinct distances.
+        """
+        # Calculate the responses
+        responses = [
+            instance.eval(challenges) for _ in range(measurements)
+        ]
+        distances = []
+        # Calculate the intra distances between arrarys of responses
+        for response_index in reversed(range(measurements-1)):
+            # Safe the responses which should be compared
+            response = responses[response_index]
+            # Delete response from responses because the hamming distance
+            # must be calculated between distinct measurements.
+            del responses[response_index]
+            # Calculate the hamming distances
+            dists = [hamming(response, res) for res in responses]
+            # Add the distances to the list for distances
+            distances = distances + dists
+        return distances
 
     @staticmethod
     def inter_distance(instance_index, responses):
@@ -58,7 +96,7 @@ class PropertyTest(object):
                                Index of instance which inter_distance should be calculated
         :param responses: array of int with shape(k, N)
                           Array of N responses of k simulation instances
-        :return: double
+        :return: float
                  Mean of the hamming distances
         """
         instance_count = len(responses)
@@ -71,6 +109,24 @@ class PropertyTest(object):
             )
 
         return mean(hamming_distances)
+
+    @staticmethod
+    def inter_distance_leuven(instance_1, instance_2, responses):
+        """
+        This function calculates the inter distance fo two puf instances for a set of challenges like in:
+        Physically Unclonable Functions: Constructions, Properties and Applications page 22
+        https://lirias.kuleuven.be/bitstream/123456789/353455/1/thesis_online.pdf
+        This function uses the fractional Hamming distance.
+        :param instance_1: int
+                           Index to reference responses from instance_1 in responses.
+        :param instance_2: int
+                           Index to reference responses from instance_2 in responses.
+        :param responses: array of int shape(N_puf,N,n)
+                          Array of evaluated challenges for N_puf challenges.
+        :return: float
+                 Fractional Hamming distance between the simulation instances.
+        """
+        return hamming(responses[instance_1], responses[instance_2])
 
     def uniqueness(self, challenges):
         """
@@ -95,6 +151,48 @@ class PropertyTest(object):
             print_progress(msg, instance_index+1, max_progress_value=instance_count)
         return current_mean_distance
 
+    def uniqueness_leuven(self, challenges, measurements=1):
+        """
+        This function generates a statistic about the inter distance of a set of simulation instances like in:
+        Physically Unclonable Functions: Constructions, Properties and Applications page 22
+        https://lirias.kuleuven.be/bitstream/123456789/353455/1/thesis_online.pdf
+        :param challenges: array of int shape(N,n)
+        :return: Dictionary of float
+                 Statistic of the set of instances {mean:, median:, min:, max:, standard_deviation:}
+        """
+        N_puf = len(self.instances)
+        # This is one because we calculate the hamming distance over N bit arrays which results in one distance value.
+        N_chal = 1
+        N_meas = measurements
+        distances = []
+        # Calculate the inter distances for N_meas instance evaluations.
+        for _ in range(N_meas):
+            self.evaluate(challenges)
+            for puf_index in range(N_puf):
+                # The instances must be distinct
+                for puf_index_2 in range(puf_index, N_puf):
+                    distances.append(self.inter_distance_leuven(puf_index, puf_index_2, self.evaluated_challenges))
+        distances = array(distances)
+
+        factor = 2/(N_puf * (N_puf - 1) * N_chal * N_meas)
+        sample_mean = factor * np_sum(distances)
+
+        sd_factor = 2/(N_puf * (N_puf -1) * N_chal * N_meas - 2)
+        standard_deviation = sqrt(sd_factor * sum((distances - sample_mean)**2))
+
+        min_dist = np_min(distances)
+        max_dist = np_max(distances)
+
+        median_dist = median(distances)
+
+        return {
+            'mean' : sample_mean,
+            'median' : median_dist,
+            'min' : min_dist,
+            'max' : max_dist,
+            'sd' : standard_deviation,
+        }
+
     def reliability(self, challenges, evaluation_count=100):
         """
         This function can be used to calculate the mean reliability (average intra distance) of an set of simulation
@@ -102,7 +200,7 @@ class PropertyTest(object):
         :param challenges: array of int shape(N,n)
         :param evaluation_count: int
                                  Number of evaluations of the Simulation.
-        :return: double
+        :return: float
                  Value which represents the reliability of a set of simulation instances.
         """
         assert evaluation_count >= 1
@@ -114,6 +212,54 @@ class PropertyTest(object):
             print_progress(msg, i, len(self.instances))
             i = i + 1
         return mean(distances)
+
+    def reliability_leuven(self, challenges, measurements=10):
+        """
+        This function calculates the reliability statistic like in:
+        Physically Unclonable Functions: Constructions, Properties and Applications page 20
+        https://lirias.kuleuven.be/bitstream/123456789/353455/1/thesis_online.pdf
+        :param challenges: array of int shape(N,n)
+        :param measurements: int
+                             Number of evaluations of the puf instance.
+        :return: Dictionary of float
+                 Statistic of the set of instances {mean:, median:, min:, max:, standard_deviation:}
+        """
+        # Define experiment parameter
+        N_puf = len(self.instances)
+        # This is one because we calculate the hamming distance over N bit arrays which results in one distance value.
+        N_chal = 1
+        N_meas = measurements
+
+        distances = []
+        i = 1
+        for instance in self.instances:
+            dists = self.intra_distance_leuven(instance, challenges, N_meas)
+            distances = distances + dists
+            print_progress('Calculate leuven reliability', i, N_puf)
+            i = i + 1
+        distances = array(distances)
+
+        # Calculate the sample mean
+        factor = 2 / (N_puf * N_chal * N_meas * (N_meas - 1))
+        sample_mean = factor * np_sum(distances)
+
+        # Calculate the standard deviation
+        factor = 2 / (N_puf * N_chal * N_meas * (N_meas - 1) - 2)
+        standard_deviation = sqrt(factor * np_sum((distances-sample_mean)**2))
+
+        min_dist = min(distances)
+        max_dist = max(distances)
+
+        median_dist = median(distances)
+
+        return {
+                'mean' : sample_mean,
+                'median' : median_dist,
+                'min' : min_dist,
+                'max' : max_dist,
+                'sd' : standard_deviation,
+                }
+
 
 
 def print_progress(message, progress_value, max_progress_value=100):
