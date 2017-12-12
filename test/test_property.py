@@ -61,7 +61,7 @@ class TestPropertyTest(unittest.TestCase):
         n = 8
 
         responses = array([ones(n), zeros(n)])
-        distance = PropertyTest.inter_distance_leuven(0, 1,responses)
+        distance = PropertyTest.inter_distance_leuven(0, 1, responses)
         self.assertEqual(distance, 1.0)
 
         # The responses differ in half of the responses
@@ -167,6 +167,7 @@ class TestPropertyTest(unittest.TestCase):
 
         noisy_property_test = PropertyTest(noisy_instances)
         noisy_reliability_statistic = noisy_property_test.reliability_leuven(challenges, measurements=measurements)
+        self.assertNotEqual(noisy_reliability_statistic['mean'], 0.0)
 
     def test_reliability(self):
         """This method tests the reliability of an instance set."""
@@ -184,9 +185,9 @@ class TestPropertyTest(unittest.TestCase):
         challenges = array(list(sample_inputs(n, N, random_instance=RandomState(0xFAB10))))
 
         property_test = PropertyTest(instances)
-        reliability = property_test.reliability(challenges, evaluation_count=eval_count)
+        reliability = property_test.reliability(challenges, measurements=eval_count)
         # For an noiseless set of simulations the average intra distance must be zero
-        self.assertEqual(reliability, 0.0)
+        self.assertEqual(reliability['mean'], 0.0)
 
         noisy_instances = [
             NoisyLTFArray(
@@ -199,7 +200,7 @@ class TestPropertyTest(unittest.TestCase):
         ]
 
         noisy_property_test = PropertyTest(noisy_instances)
-        noisy_reliability = noisy_property_test.reliability(challenges, evaluation_count=eval_count)
+        noisy_reliability = noisy_property_test.reliability(challenges, measurements=eval_count)
         # For a set of noisy simulations the reliability must differ from zero
         self.assertNotEqual(noisy_reliability, 0.0)
 
@@ -222,7 +223,7 @@ class TestPropertyTest(unittest.TestCase):
         property_test = PropertyTest(instances)
         uniqueness = property_test.uniqueness(challenges)
         # For normal distributed weights is the expected uniqueness for a sufficient hug set near 0.5
-        self.assertEqual(round(uniqueness, 1), 0.5)
+        self.assertEqual(round(uniqueness['mean'], 1), 0.5)
 
     def test_uniqueness_leuven(self):
         """This method tests the function which can be used a statistic about the leuven intra distance."""

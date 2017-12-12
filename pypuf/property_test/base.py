@@ -1,7 +1,6 @@
 """
 This module provides a class for several property tests which can be used to check the attributes of an PUF.
 """
-import sys
 from numpy import array, mean, median, absolute, sqrt
 from numpy import min as np_min
 from numpy import max as np_max
@@ -15,13 +14,14 @@ class PropertyTest(object):
     The set of instances is expected to be homogenous in n the number of stages.
     """
 
-    def __init__(self, instances):
+    def __init__(self, instances, logger=None):
         """
         :param instances: list of pypuf.simulation.base.Simulation
         """
         self.instances = instances
         # array of evaluated challenges shape(len(self.instances), number of challenges)
         self.evaluated_challenges = None
+        self.logger = logger
 
     def evaluate(self, challenges):
         """
@@ -128,28 +128,29 @@ class PropertyTest(object):
         """
         return hamming(responses[instance_1], responses[instance_2])
 
-    def uniqueness(self, challenges):
+    def uniqueness(self, challenges, measurements=1):
         """
         This calculates the mean inter distance between a set of simulation instances for a set of challenges.
         A value for the mean inter distance calculation is based on the mean inter distance between an instance to all
         other instances. The inter distance between two instances is calculated by the hamming distance of the response
         arrays.
         :param challenges: array of int shape(N,n)
-        :return: double
-                 A value which represents the uniqueness of
+        :return: Dictionary of float
+                  Statistic of the set of instances {mean:}
         """
         self.evaluate(challenges)
         instance_count = len(self.instances)
         indices = range(instance_count)
         hamming_distances = []
-        # Calculates the hamming distance from an instance to each other instance.
-        # The hamming distance here is the mean of mismatching entries.
-        for instance_index in indices:
-            hamming_distances.append(self.inter_distance(instance_index, self.evaluated_challenges))
-            current_mean_distance = mean(array(hamming_distances))
-            msg = 'The Current uniqueness is {:.2f} .'.format(current_mean_distance)
-            print_progress(msg, instance_index+1, max_progress_value=instance_count)
-        return current_mean_distance
+        for _ in range(measurements):
+            # Calculates the hamming distance from an instance to each other instance.
+            # The hamming distance here is the mean of mismatching entries.
+            for instance_index in indices:
+                hamming_distances.append(self.inter_distance(instance_index, self.evaluated_challenges))
+                current_mean_distance = mean(array(hamming_distances))
+                msg = 'The Current uniqueness is {:.2f} .'.format(current_mean_distance)
+                self.print_progress(msg, instance_index+1, max_progress_value=instance_count)
+        return {'mean': mean(array(hamming_distances))}
 
     def uniqueness_leuven(self, challenges, measurements=1):
         """
@@ -172,12 +173,13 @@ class PropertyTest(object):
                 # The instances must be distinct
                 for puf_index_2 in range(puf_index, N_puf):
                     distances.append(self.inter_distance_leuven(puf_index, puf_index_2, self.evaluated_challenges))
+                self.print_progress('Calculate leuven uniqueness.', puf_index, max_progress_value=N_puf)
         distances = array(distances)
 
-        factor = 2/(N_puf * (N_puf - 1) * N_chal * N_meas)
+        factor = 2 / (N_puf * (N_puf - 1) * N_chal * N_meas)
         sample_mean = factor * np_sum(distances)
 
-        sd_factor = 2/(N_puf * (N_puf -1) * N_chal * N_meas - 2)
+        sd_factor = 2 / (N_puf * (N_puf - 1) * N_chal * N_meas - 2)
         standard_deviation = sqrt(sd_factor * sum((distances - sample_mean)**2))
 
         min_dist = np_min(distances)
@@ -186,32 +188,32 @@ class PropertyTest(object):
         median_dist = median(distances)
 
         return {
-            'mean' : sample_mean,
-            'median' : median_dist,
-            'min' : min_dist,
-            'max' : max_dist,
-            'sd' : standard_deviation,
+            'mean': sample_mean,
+            'median': median_dist,
+            'min': min_dist,
+            'max': max_dist,
+            'sd': standard_deviation,
         }
 
-    def reliability(self, challenges, evaluation_count=100):
+    def reliability(self, challenges, measurements=100):
         """
         This function can be used to calculate the mean reliability (average intra distance) of an set of simulation
         instances.
         :param challenges: array of int shape(N,n)
-        :param evaluation_count: int
+        :param measurements: int
                                  Number of evaluations of the Simulation.
-        :return: float
-                 Value which represents the reliability of a set of simulation instances.
+        :return: Dictionary of float
+                 Statistic of the set of instances {mean:}
         """
-        assert evaluation_count >= 1
+        assert measurements >= 1
         distances = []
         i = 1
         for instance in self.instances:
-            distances.append(self.intra_distance(instance, challenges, evaluation_count))
+            distances.append(self.intra_distance(instance, challenges, measurements))
             msg = 'The Current reliability is {:.2f} .'.format(mean(distances))
-            print_progress(msg, i, len(self.instances))
+            self.print_progress(msg, i, len(self.instances))
             i = i + 1
-        return mean(distances)
+        return {'mean': mean(distances)}
 
     def reliability_leuven(self, challenges, measurements=10):
         """
@@ -235,7 +237,7 @@ class PropertyTest(object):
         for instance in self.instances:
             dists = self.intra_distance_leuven(instance, challenges, N_meas)
             distances = distances + dists
-            print_progress('Calculate leuven reliability', i, N_puf)
+            self.print_progress('Calculate leuven reliability', i, N_puf)
             i = i + 1
         distances = array(distances)
 
@@ -253,26 +255,26 @@ class PropertyTest(object):
         median_dist = median(distances)
 
         return {
-                'mean' : sample_mean,
-                'median' : median_dist,
-                'min' : min_dist,
-                'max' : max_dist,
-                'sd' : standard_deviation,
-                }
+            'mean': sample_mean,
+            'median': median_dist,
+            'min': min_dist,
+            'max': max_dist,
+            'sd': standard_deviation,
+        }
 
-
-
-def print_progress(message, progress_value, max_progress_value=100):
-    """
-    This function can be used to print a progressbar to stderr.
-    :param message: string
-                    A message which is displayed on the left to the progress bar.
-    :param progress_value: int
-                           A Value to determine the current progress, which should be lower equal max_progress_value.
-    :param max_progress_value: int default is 100
-                               An upper bound for the current progress.
-    """
-    progress_fractal = progress_value/max_progress_value
-    progress_bar = ''.join(['#' for i in range(int(progress_fractal*10))])
-    sys.stderr.write('\r{} [{:<10}] {:>3.0%}'.format(message, progress_bar, progress_fractal))
-    sys.stderr.flush()
+    def print_progress(self, message, progress_value, max_progress_value=100):
+        """
+        This function can be used to print a progressbar to stderr.
+        :param message: string
+                        A message which is displayed on the left to the progress bar.
+        :param progress_value: int
+                               A Value to determine the current progress, which should be lower equal
+                               max_progress_value.
+        :param max_progress_value: int default is 100
+                                   An upper bound for the current progress.
+        """
+        if self.logger is None:
+            return
+        progress_fractal = progress_value/max_progress_value
+        progress_bar = ''.join(['#' for i in range(int(progress_fractal*10))])
+        self.logger.debug('\r{} [{:<10}] {:>3.0%}'.format(message, progress_bar, progress_fractal))
