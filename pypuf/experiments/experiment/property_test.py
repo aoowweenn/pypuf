@@ -50,7 +50,7 @@ class ExperimentPropertyTest(Experiment):
         minimum = self.result.get('min', float("inf"))
         maximum = self.result.get('max', float("inf"))
         standard_deviation = self.result.get('sd', float("inf"))
-        msg = '{}{:f}\t{:f}\t{:f}\t{:f}\t{:f}'.format(self.log_name, mean, median, minimum, maximum, standard_deviation)
+        msg = '{}\t{:f}\t{:f}\t{:f}\t{:f}\t{:f}'.format(self.log_name, mean, median, minimum, maximum, standard_deviation)
         self.result_logger.info(msg)
 
     @classmethod
