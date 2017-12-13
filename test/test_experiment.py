@@ -1,5 +1,6 @@
 """This module tests the different experiment classes."""
 import unittest
+import mock
 import os
 import glob
 import multiprocessing
@@ -224,21 +225,26 @@ class TestExperimentReliabilityBasedCMAES(TestBase):
         queue.put_nowait(None)
         listener.join()
 
-    @unittest.skip
     def test_calc_individual_accs(self):
-        """This method tests"""
-        mock = object
-        mock.transform = LTFArray.transform_id
-        mock.combiner = LTFArray.combiner_xor
-        mock.n = 16
-        mock.k = 2
-        mock.model = object
-        mock.model.weight_array = LTFArray.normal_weights(mock.n, mock.k, random_instance=RandomState(0xbee))
-        mock.instance = object
-        mock.instance.weight_array = LTFArray.normal_weights(mock.n, mock.k, random_instance=RandomState(0xbabe))
-        mock.prng_c = RandomState(0xabc)
-        particular_accs = ExperimentReliabilityBasedCMAES.calc_individual_accs(mock)
-        self.assertIsNotNone(particular_accs)
-        assert shape(particular_accs) == (mock.k,)
-        for i in range(mock.k):
-            assert particular_accs[i] > 0.5 and particular_accs[i] <= 1.0
+        """This method tests the calculation of individual (non-polarized) accuracies of a learned model"""
+        mock_exp = mock.MagicMock()
+        mock_exp.transform = LTFArray.transform_id
+        mock_exp.combiner = LTFArray.combiner_xor
+        mock_exp.n = 16
+        mock_exp.k = 2
+        mock_exp.model = mock.MagicMock()
+        mock_exp.model.weight_array = LTFArray.normal_weights(
+            mock_exp.n, mock_exp.k, random_instance=RandomState(0xbee)
+        )
+        mock_exp.instance = mock.MagicMock()
+        mock_exp.instance.weight_array = LTFArray.normal_weights(
+            mock_exp.n, mock_exp.k, random_instance=RandomState(0xbabe)
+        )
+        mock_exp.prng_c = RandomState(0xabc)
+        mock_exp.calc_individual_accs = ExperimentReliabilityBasedCMAES.calc_individual_accs
+        individual_accs = mock_exp.calc_individual_accs()
+        self.assertIsNotNone(individual_accs)
+        assert shape(individual_accs) == (mock_exp.k,)
+        for i in range(mock_exp.k):
+            assert individual_accs[i] > 0.0
+            assert individual_accs[i] <= 1.0

@@ -1,5 +1,7 @@
-"""This module provides an experiment class which learns an instance
-of LTFArray with reliability based CMAES learner.
+"""This module provides an experiment class which learns an instance of LTFArray with reliability based CMAES learner.
+It is based on the work from G. T. Becker in "The Gap Between Promise and Reality: On the Insecurity of
+XOR Arbiter PUFs". The learning algorithm applies Covariance Matrix Adaptation Evolution Strategies from N. Hansen
+in "The CMA Evolution Strategy: A Comparing Review".
 """
 import numpy as np
 
@@ -17,7 +19,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
                  seed_model, pop_size, limit_stag, limit_iter,
                  ):
         """Initialize an Experiment using the Reliability based CMAES Learner for modeling LTF Arrays
-        :param log_name:        Log name, Prefix of the path or name of the experiment log file
+        :param log_name:        Log name, Prefix of the name of the experiment log file
         :param seed_instance:   PRNG seed used to create an LTF array instance to learn
         :param k:               Width, the number of parallel LTFs in the LTF array
         :param n:               Length, the number stages within the LTF array
@@ -25,7 +27,7 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         :param combiner:        Combiner, the function that combines particular chains' outputs within the LTF array
         :param noisiness:       Noisiness, the relative scale of noise of instance compared to the scale of weights
         :param seed_challenges: PRNG seed used to sample challenges
-        :param num:             Challenge number, the number of binary inputs for the LTF array
+        :param num:             Challenge number, the number of binary inputs (challenges) for the LTF array
         :param reps:            Repetitions, the number of evaluations of every challenge (part of training_set)
         :param seed_model:      PRNG seed used by the CMAES algorithm for sampling solution points
         :param pop_size:        Population size, the number of sampled points of every CMAES iteration
@@ -97,14 +99,15 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         """Analyze the learned model"""
         assert self.model is not None
         self.result_logger.info(
-            '0x%x\t0x%x\t%i\t%i\t%i\t%i\t%f\t%f\t%s\t%f\t%s\t%i\t%i\t%s',
+            '0x%x\t0x%x\t%i\t%i\t%i\t%f\t%i\t%i\t%f\t%s\t%f\t%s\t%i\t%i\t%s',
             self.seed_instance,
             self.seed_model,
             self.n,
             self.k,
             self.num,
-            self.reps,
             self.noisiness,
+            self.reps,
+            self.pop_size,
             1.0 - tools.approx_dist(self.instance, self.model, min(10000, 2 ** self.n), self.prng_c),
             self.calc_individual_accs(),
             self.measured_time,
@@ -119,11 +122,21 @@ class ExperimentReliabilityBasedCMAES(Experiment):
         transform = self.model.transform
         combiner = self.model.combiner
         accuracies = np.zeros(self.k)
+        poles = np.zeros(self.k)
         for i in range(self.k):
             chain_model = LTFArray(self.model.weight_array[i, np.newaxis, :], transform, combiner)
             for j in range(self.k):
                 chain_original = LTFArray(self.instance.weight_array[j, np.newaxis, :], transform, combiner)
                 accuracy = tools.approx_dist(chain_original, chain_model, min(10000, 2 ** self.n), self.prng_c)
-                accuracy = 1.0 - accuracy if accuracy < 0.5 else accuracy
-                accuracies[i] = accuracy if accuracy > accuracies[i] else accuracies[i]
+                pole = 1
+                if accuracy < 0.5:
+                    accuracy = 1.0 - accuracy
+                    pole = -1
+                if accuracy > accuracies[i]:
+                    accuracies[i] = accuracy
+                    poles[i] = pole
+        accuracies *= poles
+        for i in range(self.k):
+            if accuracies[i] < 0:
+                accuracies[i] += 1
         return ','.join(map(str, accuracies))

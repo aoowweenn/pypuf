@@ -62,10 +62,12 @@ class ReliabilityBasedCMAES(Learner):
             if self.logger is None:
                 return
             self.logger.debug(
-                '%i\t%f\t%f\t%s\n',
+                '%i\t%f\t%f\t%i\t%i\t%s\n',
                 self.num_iterations,
                 es.sigma,
                 fitness(es.mean),
+                self.num_learned,
+                self.num_abortions,
                 ','.join(map(str, list(es.mean))),
             )
 
@@ -120,26 +122,13 @@ class ReliabilityBasedCMAES(Learner):
                                                  self.transform, self.combiner)
         return LTFArray(self.learned_chains, self.transform, self.combiner)
 
-    @property
-    def training_set(self):
-        """Return the training set which is used to learn a PUF instance
-        :return: pypuf.tools.TrainingSet
-        """
-        return self.__training_set
-
-    @training_set.setter
-    def training_set(self, val):
-        """Set the training set which is used to learn a PUF instance
-        :param val: pypuf.tools.TrainingSet
-        """
-        self.__training_set = val
-
     @staticmethod
     @contextlib.contextmanager
     def avoid_printing():
         save_stdout = sys.stdout
         sys.stdout = open('/dev/null', 'w')
         yield
+        sys.stdout.close()
         sys.stdout = save_stdout
 
     @staticmethod

@@ -30,9 +30,10 @@ def main(args):
         stderr.write('      restarts:   number of repeated initializations of the learner\n')
         stderr.write('      instances:  number of repeated initializations of the instance\n')
         stderr.write('                   The number of total learning attempts is restarts times instances.\n')
-        stderr.write('      seed_i:     random seed used for creating LTF array instance and for simulating noise\n')
-        stderr.write('      seed_c:     random seed used for sampling challenges\n')
-        stderr.write('      seed_m:     random seed used for the model in first learning attempt\n')
+        stderr.write('      [seed_i, seed_c, seed_m]:   random seeds used for\n'
+                     '                  - creating LTF array instance and simulating noise (seed_i),\n')
+        stderr.write('                  - sampling challenges (seed_c),\n')
+        stderr.write('                  - modelling LTF array instance (seed_m)\n')
         stderr.write('      [log_name]: path to the logfile which contains results from all instances.\n'
                      '                   The tool will add a ".log" to log_name. The default path is ./sim_learn.log\n')
         quit(1)
@@ -56,7 +57,7 @@ def main(args):
         seed_c = int(args[12], 16)
         seed_m = int(args[13], 16)
 
-    log_name = 'test_sim_rel_cmaes'
+    log_name = 'sim_rel_cmaes'
     if len(args) == 15:
         log_name = args[14]
 
@@ -82,7 +83,7 @@ def main(args):
                 seed_instance=seed_i + instance,
                 k=k,
                 n=n,
-                transform=LTFArray.transform_atf,
+                transform=LTFArray.transform_id,
                 combiner=LTFArray.combiner_xor,
                 noisiness=noisiness,
                 seed_challenges=seed_c + instance,
