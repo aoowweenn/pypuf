@@ -10,11 +10,19 @@ from scipy.special import gamma
 from scipy.linalg import norm
 import cma
 
+from pypuf import tools
 from pypuf.learner.base import Learner
 from pypuf.simulation.arbiter_based.ltfarray import LTFArray
 
 
 class ReliabilityBasedCMAES(Learner):
+
+    # Constants
+    CONST_EPSILON = 0.1
+    FREQ_ABORTION_CHECK = 50
+    FREQ_LOGGING = 1
+    APPROX_CHALLENGE_NUM = 10000
+    THRESHOLD_DIST = 0.25
 
     def __init__(self, training_set, k, n, transform, combiner,
                  pop_size, limit_stag, limit_iter, random_seed, logger):
@@ -36,19 +44,19 @@ class ReliabilityBasedCMAES(Learner):
         self.n = n
         self.transform = transform
         self.combiner = combiner
-        self.challenges = training_set.challenges
-        self.responses_rep = training_set.responses
-        self.reps = training_set.reps
         self.pop_size = pop_size
         self.limit_s = limit_stag
         self.limit_i = limit_iter
         self.prng = np.random.RandomState(random_seed)
-        self.learned_chains = np.zeros((self.k, self.n))
+        self.chains_learned = np.zeros((self.k, self.n))
         self.num_iterations = 0
         self.stops = ''
         self.num_abortions = 0
         self.num_learned = 0
         self.logger = logger
+
+        if 2**n < self.APPROX_CHALLENGE_NUM:
+            self.APPROX_CHALLENGE_NUM = 2**n
 
     def learn(self):
         """Compute a model according to the given LTF Array parameters and training set
@@ -62,7 +70,7 @@ class ReliabilityBasedCMAES(Learner):
             if self.logger is None:
                 return
             self.logger.debug(
-                '%i\t%f\t%f\t%i\t%i\t%s\n',
+                '%i\t%f\t%f\t%i\t%i\t%s',
                 self.num_iterations,
                 es.sigma,
                 fitness(es.mean),
@@ -72,9 +80,14 @@ class ReliabilityBasedCMAES(Learner):
             )
 
         # Preparation
-        epsilon = np.sqrt(self.n) * 0.1
-        measured_rels = self.measure_rels(self.responses_rep)
-        fitness = self.create_fitness_function(self.challenges, measured_rels, epsilon, self.transform, self.combiner)
+        epsilon = np.sqrt(self.n) * self.CONST_EPSILON
+        fitness = self.create_fitness_function(
+            challenges=self.training_set.challenges,
+            measured_rels=self.measure_rels(self.training_set.responses),
+            epsilon=epsilon,
+            transform=self.transform,
+            combiner=self.combiner,
+        )
         normalize = np.sqrt(2) * gamma(self.n / 2) / gamma((self.n - 1) / 2)
         mean_start = np.zeros(self.n)
         step_size_start = 1
@@ -90,37 +103,46 @@ class ReliabilityBasedCMAES(Learner):
             while self.num_learned < self.k:
                 options['seed'] = self.prng.randint(2 ** 32)
                 is_same_solution = self.create_abortion_function(
-                    self.learned_chains, self.num_learned, self.challenges, self.transform, self.combiner
+                    chains_learned=self.chains_learned,
+                    num_learned=self.num_learned,
+                    transform=self.transform,
+                    combiner=self.combiner,
+                    threshold=self.THRESHOLD_DIST,
                 )
                 es = cma.CMAEvolutionStrategy(x0=mean_start, sigma0=step_size_start, inopts=options)
-                counter = 0
-                # Learn particular LTF array using abortion if evolutionary search approximates previous solution
+                counter = 1
+                # Learn individual LTF array using abortion if evolutionary search approximates previous a solution
                 while not es.stop():
-                    if counter % 50 == 0 and is_same_solution is not None:
+                    if counter % self.FREQ_ABORTION_CHECK == 0 and is_same_solution is not None:
                         if is_same_solution(es.mean):
                             self.num_abortions += 1
                             break
-                    curr_points = es.ask()
+                    curr_points = es.ask()  # Sample new solution points
                     es.tell(curr_points, [fitness(point) for point in curr_points])
                     self.num_iterations += 1
-                    log_state(es)
+                    if counter % self.FREQ_LOGGING == 0:
+                        log_state(es)
                     counter += 1
                 solution = es.result.xbest
-                self.num_iterations += es.result.iterations
 
-                # Include normalized new LTF, if it is different from previous ones
+                # Include normalized solution, if it is different from previous ones
                 if not is_same_solution(solution):
-                    self.learned_chains[self.num_learned] = normalize * solution / norm(solution)
+                    self.chains_learned[self.num_learned] = normalize * solution / norm(solution)
                     self.num_learned += 1
                     if self.stops != '':
                         self.stops += ','
                     self.stops += '_'.join(list(es.stop()))
 
-        # Polarize the learned combined LTF
-        majority_responses = self.majority_responses(self.responses_rep)
-        self.learned_chains = self.polarize_ltfs(self.learned_chains, self.challenges, majority_responses,
-                                                 self.transform, self.combiner)
-        return LTFArray(self.learned_chains, self.transform, self.combiner)
+        # Polarize the learned combined LTF array
+        majority_responses = self.majority_responses(self.training_set.responses)
+        self.chains_learned = self.polarize_chains(
+            chains_learned=self.chains_learned,
+            challenges=self.training_set.challenges,
+            majority_responses=majority_responses,
+            transform=self.transform,
+            combiner=self.combiner,
+        )
+        return LTFArray(self.chains_learned, self.transform, self.combiner)
 
     @staticmethod
     @contextlib.contextmanager
@@ -152,42 +174,42 @@ class ReliabilityBasedCMAES(Learner):
     @staticmethod
     def calc_corr(reliabilities, measured_rels):
         """Return pearson correlation coefficient between reliability arrays of individual and instance"""
-        if np.var(reliabilities[:]) == 0:  # Avoid divide by zero
+        if np.var(reliabilities[:]) == 0:  # Avoid dividing by zero
             return -1
         else:
             return np.corrcoef(reliabilities[:], measured_rels)[0, 1]
 
     @staticmethod
-    def create_abortion_function(learned_ltfs, num_learned, challenges, transform, combiner):
+    def create_abortion_function(chains_learned, num_learned, transform, combiner, threshold):
         """Return an abortion function on a fixed set of challenges and LTFs"""
         this = __class__
-        weight_arrays = learned_ltfs[:num_learned, :]
+        weight_arrays = chains_learned[:num_learned, :]
         learned_ltf_arrays = this.build_ltf_arrays(weight_arrays, transform, combiner)
-        responses_learned_ltfs = np.zeros((num_learned, np.shape(challenges)[0]))
-        for i, current_ltf in enumerate(learned_ltf_arrays):
-            responses_learned_ltfs[i, :] = current_ltf.eval(challenges)
 
-        def same_solution(solution):
+        def is_same_solution(solution):
             """Return True, if the current solution mean within CMAES is similar to a previously learned LTF array"""
             if num_learned == 0:
                 return False
             new_ltf_array = LTFArray(solution[np.newaxis, :], transform, combiner)
-            responses_new_ltf = new_ltf_array.eval(challenges)
-            return this.is_correlated(responses_new_ltf, responses_learned_ltfs)
+            for current_ltf_array in learned_ltf_arrays:
+                dist = tools.approx_dist(current_ltf_array, new_ltf_array, this.APPROX_CHALLENGE_NUM)
+                if dist < threshold or dist > (1 - threshold):
+                    return True
+            return False
 
-        return same_solution
+        return is_same_solution
 
     @staticmethod
-    def polarize_ltfs(learned_ltfs, challenges, majority_responses, transform, combiner):
+    def polarize_chains(chains_learned, challenges, majority_responses, transform, combiner):
         """Return the correctly polarized combined LTF array"""
-        model = LTFArray(learned_ltfs, transform, combiner)
+        model = LTFArray(chains_learned, transform, combiner)
         responses_model = model.eval(challenges)
-        challenge_num = np.shape(challenges)[0]
-        accuracy = np.count_nonzero(responses_model == majority_responses) / challenge_num
-        polarized_ltfs = learned_ltfs
+        num = np.shape(challenges)[0]
+        accuracy = np.count_nonzero(responses_model == majority_responses) / num
+        polarized_chains = chains_learned
         if accuracy < 0.5:
-            polarized_ltfs[0, :] *= -1
-        return polarized_ltfs
+            polarized_chains[0, :] *= -1
+        return polarized_chains
 
     @staticmethod
     def build_ltf_arrays(weight_arrays, transform, combiner):
@@ -195,16 +217,6 @@ class ReliabilityBasedCMAES(Learner):
         pop_size = np.shape(weight_arrays)[0]
         for i in range(pop_size):
             yield LTFArray(weight_arrays[i, np.newaxis, :], transform, combiner)
-
-    @staticmethod
-    def is_correlated(responses_new_ltf, responses_learned_ltfs):
-        """Return True, if 2 response arrays are more than 75% equal (Hamming distance)"""
-        num_of_ltfs, challenge_num = np.shape(responses_learned_ltfs)
-        for i in range(num_of_ltfs):
-            differences = np.sum(np.abs(responses_new_ltf[:] - responses_learned_ltfs[i, :])) / 2
-            if differences < 0.25*challenge_num or differences > 0.75*challenge_num:
-                return True
-        return False
 
     @staticmethod
     def majority_responses(responses):

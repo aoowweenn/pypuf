@@ -38,18 +38,18 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
             measured_rels=measured_rels,
             epsilon=epsilon,
             transform=self.transform,
-            combiner=self.combiner
+            combiner=self.combiner,
         )
         assert fitness(self.instance.weight_array) < 0.2
 
     @unittest.skip
     def test_create_abortion_function(self):
         is_same_solution = Learner.create_abortion_function(
-            learned_ltfs=self.instance.weight_array,
+            chains_learned=self.instance.weight_array,
             num_learned=1,
-            challenges=self.training_set.challenges,
             transform=self.transform,
-            combiner=self.combiner
+            combiner=self.combiner,
+            threshold=0.25,
         )
         assert is_same_solution(self.instance.weight_array[0, :])
 
@@ -69,10 +69,10 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
             limit_stag=limit_stag,
             limit_iter=limit_iter,
             random_seed=self.seed_model,
-            logger=logger
+            logger=logger,
         )
         model = learner.learn()
-        distance = tools.approx_dist(self.instance, model, 100000)
+        distance = tools.approx_dist(self.instance, model, 10000)
         assert distance < 0.4
 
     def test_calc_corr(self):
@@ -95,8 +95,8 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
         ])
         challenges = tools.sample_inputs(n=4, num=8, random_instance=self.prng_c)
         majority_responses = np.array([1, 1, 1, 1, -1, -1, -1, -1])
-        polarized_ltf_array = Learner.polarize_ltfs(
-            learned_ltfs=learned_ltfs,
+        polarized_ltf_array = Learner.polarize_chains(
+            chains_learned=learned_ltfs,
             challenges=challenges,
             majority_responses=majority_responses,
             transform=self.transform,
@@ -114,17 +114,6 @@ class TestReliabilityBasedCMAES(unittest.TestCase):
         for ltf_array in ltf_arrays:
             res = ltf_array.eval(challenges)
             np.testing.assert_array_equal(res, res_original)
-
-    def test_is_correlated(self):
-        res_1 = np.array([1, 1, 1, 1, 1, 1, 1, 1])
-        res_2 = np.array([[1, 1, 1, 1, 1, 1, 1, -1],
-                          [1, 1, 1, 1, -1, -1, -1, -1]])
-        res_3 = np.array([[1, 1, 1, 1, 1, 1, -1, -1],
-                          [1, 1, 1, 1, -1, -1, -1, -1]])
-        corr_1_2 = Learner.is_correlated(res_1, res_2)
-        corr_1_3 = Learner.is_correlated(res_1, res_3)
-        self.assertTrue(corr_1_2)
-        self.assertFalse(corr_1_3)
 
     responses = np.array([
         [1, 1, 1, 1],

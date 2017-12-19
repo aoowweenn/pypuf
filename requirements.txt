@@ -5,3 +5,4 @@ pylint
 pep8
 pypuf_helper
 cma=2.3.*
+mock=2.0.*
